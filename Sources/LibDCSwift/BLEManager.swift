@@ -137,6 +137,7 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         SerialService(uuid: "ca7b0001-f785-4c38-b599-c7c5fbadb034", vendor: "Pelagic", product: "i330R/DSX"),
         SerialService(uuid: "fdcdeaaa-295d-470e-bf15-04217b7aa0a0", vendor: "ScubaPro", product: "G2/G3"),
         SerialService(uuid: "fe25c237-0ece-443c-b0aa-e02033e7029d", vendor: "Shearwater", product: "Perdix/Teric"),
+        SerialService(uuid: "1aa44039-1667-4b29-87cc-dfecaaf31d97", vendor: "Shearwater", product: "Perdix 3"),
         SerialService(uuid: "0000fcef-0000-1000-8000-00805f9b34fb", vendor: "Divesoft", product: "Freedom"),
         SerialService(uuid: "6e400001-b5a3-f393-e0a9-e50e24dc10b8", vendor: "Cressi", product: "Goa"),
         SerialService(uuid: "00000001-8c3b-4f2c-a59e-8c08224f3253", vendor: "Halcyon", product: "Symbios"),
@@ -251,11 +252,11 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
             Thread.sleep(forTimeInterval: 0.05)
         }
         
+        let elapsed = Date().timeIntervalSince(startTime)
         if Logger.shared.isDebugMode {
-            let elapsed = Date().timeIntervalSince(startTime)
             logDebug("[BLE NOTIFY] Enabled in \(String(format: "%.2f", elapsed))s")
         }
-        
+
         return notifyCharacteristic.isNotifying
     }
     
