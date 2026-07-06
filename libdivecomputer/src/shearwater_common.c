@@ -381,7 +381,7 @@ shearwater_common_transfer (shearwater_common_device_t *device, const unsigned c
     }
 
     if (device->bluetooth_v2) {
-        // v2 response: 01 FF 00 00 [len] [data]  (normal)
+        // v2 response: 01 FF 00 00 [len] [data]   (normal)
         //              01 FF 00 [XX] 02 [body]    (block, XX != 0x00)
         if (n < 5 || packet[0] != 0x01 || packet[1] != 0xFF || packet[2] != 0x00) {
             ERROR (abstract->context, "Invalid packet header.");
@@ -397,7 +397,8 @@ shearwater_common_transfer (shearwater_common_device_t *device, const unsigned c
             }
             memcpy (output, packet + 5, datalen);
         } else {
-            // Block response: strip the 5-byte header, hand body (76 block data) to caller.
+            // Block response: strip the 5 byte header and hand the
+            // body (0x76 block data) to the caller.
             if (packet[4] != 0x02) {
                 ERROR (abstract->context, "Unexpected block response type.");
                 return DC_STATUS_PROTOCOL;
@@ -414,7 +415,7 @@ shearwater_common_transfer (shearwater_common_device_t *device, const unsigned c
         return DC_STATUS_SUCCESS;
     }
 
-    // v1 response: 01 FF [len+1] 00 [data]
+    // Validate the packet header.
     if (n < 4 || packet[0] != 0x01 || packet[1] != 0xFF || packet[3] != 0x00) {
         ERROR (abstract->context, "Invalid packet header.");
         return DC_STATUS_PROTOCOL;
@@ -445,10 +446,16 @@ shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buf
     unsigned char req_init[10];
     unsigned int req_init_len;
     if (device->bluetooth_v2) {
+        // The v2 protocol always has the 0x10 bit set in the request.
+        // Whether the payload is actually LRE compressed still follows
+        // the caller's compression flag: manifests (sub-command 0x24)
+        // arrive uncompressed, dive data (sub-command 0x04) compressed.
         req_init[0] = 0x35;
-        req_init[1] = 0x10; // compression always enabled for v2
+        req_init[1] = 0x10;
         if (size > 0xFFFF) {
-            // Stream to end, no size field (sub-command 0x04).
+            // Stream to the end of the data, without a size field
+            // (sub-command 0x04). The device signals the end of the
+            // stream with a 0x7F response.
             req_init[2] = 0x04;
             req_init[3] = (address >> 24) & 0xFF;
             req_init[4] = (address >> 16) & 0xFF;
@@ -456,7 +463,8 @@ shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buf
             req_init[6] = (address      ) & 0xFF;
             req_init_len = 7;
         } else {
-            // Fixed size with 2-byte size field (sub-command 0x24).
+            // Fixed size transfer with a 2 byte size field
+            // (sub-command 0x24).
             req_init[2] = 0x24;
             req_init[3] = (address >> 24) & 0xFF;
             req_init[4] = (address >> 16) & 0xFF;
@@ -535,13 +543,13 @@ shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buf
             return rc;
         }
 
-        // In v2 streaming mode (sub-command 0x04), the device signals the end
-        // of the data with a normal response carrying command 0x7F (0x3F | 0x40)
+        // In v2 streaming mode (sub-command 0x04), the device signals the
+        // end of the data with a response carrying command 0x7F (0x3F | 0x40)
         // instead of another block response. This is a clean "no more blocks"
-        // indication: keep the blocks already collected and stop the transfer.
-        // The device has already ended the session, so the quit request is
-        // skipped below. This is v2-only to avoid affecting other Shearwater
-        // devices, which reuse 0x7F as a NAK code.
+        // indication: keep the blocks already collected and stop the
+        // transfer. The device has already closed the session, so the quit
+        // request is skipped below. This is v2 only, to avoid affecting the
+        // other Shearwater devices, which reuse 0x7F as a NAK code.
         if (device->bluetooth_v2 && n >= 1 && response[0] == 0x7F) {
             ended = 1;
             break;
@@ -590,9 +598,9 @@ shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buf
         }
     }
 
-    // Transfer the quit request. When the v2 device has already signalled the
-    // end of data with a 0x7F response, the transfer session is already closed,
-    // so the quit request is skipped.
+    // Transfer the quit request. When a v2 device has already signalled
+    // the end of the data with a 0x7F response, the transfer session is
+    // already closed, and the quit request is skipped.
     if (!ended) {
         rc = shearwater_common_transfer (device, req_quit, sizeof (req_quit), response, 2, &n);
         if (rc != DC_STATUS_SUCCESS) {
@@ -792,3 +800,4 @@ shearwater_common_timesync_utc (shearwater_common_device_t *device, const dc_dat
 
     return status;
 }
+

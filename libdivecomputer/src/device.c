@@ -518,3 +518,4 @@ device_is_cancelled (dc_device_t *device)
 
     return device->cancel_callback (device->cancel_userdata);
 }
+

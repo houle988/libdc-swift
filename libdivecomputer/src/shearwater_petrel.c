@@ -102,8 +102,8 @@ shearwater_petrel_device_open (dc_device_t **out, dc_context_t *context, dc_iost
         goto error_free;
     }
 
-    // Set the v2 BLE protocol flag for the Perdix 3 which uses different framing.
-    device->base.bluetooth_v2 = (model == PERDIX3_V2);
+    // Enable the revised BLE framing for the Perdix 3.
+    device->base.bluetooth_v2 = (model == PERDIX3);
 
     *out = (dc_device_t *) device;
 
@@ -380,3 +380,4 @@ shearwater_petrel_device_timesync (dc_device_t *abstract, const dc_datetime_t *d
         return shearwater_common_timesync_local (device, datetime);
     }
 }
+
