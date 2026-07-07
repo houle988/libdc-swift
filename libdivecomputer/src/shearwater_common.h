@@ -60,9 +60,9 @@ extern "C" {
 #define STEP(i,n) ((NSTEPS * (i) + (n) / 2) / (n))
 
 typedef struct shearwater_common_device_t {
-    dc_device_t base;
-    dc_iostream_t *iostream;
-    unsigned int bluetooth_v2; /* Perdix 3 (and later) revised BLE framing. */
+	dc_device_t base;
+	dc_iostream_t *iostream;
+	unsigned int bluetooth_v2; /* Perdix 3 (and later) revised BLE framing. */
 } shearwater_common_device_t;
 
 dc_status_t
@@ -90,4 +90,3 @@ shearwater_common_timesync_utc (shearwater_common_device_t *device, const dc_dat
 }
 #endif /* __cplusplus */
 #endif /* SHEARWATER_COMMON_H */
-
