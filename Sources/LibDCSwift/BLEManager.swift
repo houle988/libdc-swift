@@ -64,7 +64,7 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
     }
     @Published public var isDisconnecting = false // Indicates if currently disconnecting from device
     @Published public var isBluetoothReady = false // Indicates if Bluetooth is ready for use
-    @Published public var isConnecting = false // Indicates if a connection attempt is in progress (prevents auto-reconnect)
+    @Published public var isConnecting = false // Indicates if a connection attempt is in progress (prevents auto-reconnect). Must only be mutated on the main queue.
     @Published private var deviceDataPtrChanged = false
 
     // MARK: - Private Properties
@@ -719,14 +719,22 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
                 // Attempt to reconnect if this was a stored device
                 if let storedDevice = DeviceStorage.shared.getStoredDevice(uuid: peripheral.identifier.uuidString) {
                     logInfo("Attempting to reconnect to stored device after brief delay")
+                    // Gate immediately so a second disconnect within the 500 ms window
+                    // cannot also pass the !isConnecting guard and start a parallel
+                    // openBLEDevice call that races on device_data_t.
+                    self.isConnecting = true
                     // 500 ms delay gives CoreBluetooth and the dive computer time to tear
                     // down the previous connection. Without this, sleepy devices (i300C)
                     // can fail the second connect with a 10 s peripheral-ready timeout.
+                    // openBLEDevice is a blocking call and must NOT run on the main queue —
+                    // CoreBluetooth callbacks are delivered on main and would deadlock.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        _ = DeviceConfiguration.openBLEDevice(
-                            name: storedDevice.name,
-                            deviceAddress: storedDevice.uuid
-                        )
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            _ = DeviceConfiguration.openBLEDevice(
+                                name: storedDevice.name,
+                                deviceAddress: storedDevice.uuid
+                            )
+                        }
                     }
                 }
             } else if self.isRetrievingLogs {
