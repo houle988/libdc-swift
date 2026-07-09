@@ -467,7 +467,10 @@ public class GenericParser {
 
         // Get environmental data fields
         if let salinity: dc_salinity_t = getField(parser, type: DC_FIELD_SALINITY) {
-            wrapper.data.salinity = salinity.type == DC_WATER_SALT ? 1.025 : 1.000
+            // Use the actual density (kg/m³ → g/cm³) so EN13319 (1020 kg/m³ = 1.020 g/cm³)
+            // is preserved rather than being collapsed to the generic 1.025 salt value.
+            wrapper.data.salinity = salinity.density > 0 ? salinity.density / 1000.0
+                                                         : (salinity.type == DC_WATER_SALT ? 1.025 : 1.000)
         }
 
         if let atmospheric: Double = getField(parser, type: DC_FIELD_ATMOSPHERIC) {
@@ -596,4 +599,4 @@ public class GenericParser {
             gfHigh: UInt32(gfHigh)
         )
     }
-} 
+}

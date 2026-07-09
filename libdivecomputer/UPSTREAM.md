@@ -1,14 +1,14 @@
 # Vendored libdivecomputer
 
-This directory contains a snapshot of [libdivecomputer](https://github.com/libdivecomputer/libdivecomputer)
+This directory contains a snapshot of [libdivecomputer](https://github.com/houle988/libdivecomputer)
 compiled as a SwiftPM target (autotools is not available in SwiftPM, so the library is vendored directly).
 
 ## Current snapshot
 
 | Field | Value |
 |---|---|
-| Upstream commit | `77759abf8caa237f0dc5014acea89c1ffc13d2c5` |
-| Upstream date | 2026-06-23 |
+| Upstream commit | `058d06fc8f12e7a843a6ca493f735e7036c70ea5` |
+| Upstream date | 2026-07-09 |
 | Version | 0.10.0 |
 
 ## version.h
@@ -23,11 +23,19 @@ compiled as a SwiftPM target (autotools is not available in SwiftPM, so the libr
 | `src/serial_win32.c` | Windows only; already listed in `exclude` in `Package.swift` |
 | `src/libdivecomputer.rc` | Windows resource script; not needed on Apple platforms |
 
+## Files removed from upstream (also removed here)
+
+| File | Reason |
+|---|---|
+| `src/hw_frog.c` | Frog support merged into `hw_ostc3.c` (commit 058d06fc) |
+| `src/hw_frog.h` | Frog support merged into `hw_ostc3.h` (commit 058d06fc) |
+| `include/libdivecomputer/hw_frog.h` | Frog support merged into `hw_ostc3.h` (commit 058d06fc) |
+
 ## How to update
 
 1. Clone the upstream repo:
    ```
-   git clone --depth=1 https://github.com/libdivecomputer/libdivecomputer /tmp/libdivecomputer-upstream
+   git clone --depth=1 --branch working https://github.com/houle988/libdivecomputer /tmp/libdivecomputer-upstream
    ```
 2. Compare file lists (`src/` and `include/libdivecomputer/`) for new or removed files.
 3. Copy changed files, skipping the Windows-only ones listed above.
@@ -45,3 +53,8 @@ After updating the C library, check `descriptor.c` for new or changed entries an
   - `DeviceFamily` enum: add a case for each new `DC_FAMILY_*` constant, with matching `asDCFamily` and `init?(dcFamily:)` entries.
   - `knownServiceUUIDs`: add the BLE service UUID (must match the entry in `knownSerialServices`).
   - `bleNamePrefixes`: for families where the C BLE filter covers multiple models, add prefix entries ordered most-specific-first. Verify the prefix string against the `dc_filter_*` function in `descriptor.c` — it must match the actual BLE advertisement name, not just the display name.
+- **`BlueDive/Assets.xcassets/DeviceIcons/`** — add a product image imageset for each new device:
+  - Create a folder named `DeviceIcon_<SanitisedModelName>.imageset/` where `<SanitisedModelName>` is derived the same way as `DiveComputerIconView.modelLevelAssetName(_:)`: replace spaces and non-alphanumeric characters with `_`, collapse consecutive separators, and join with `_`. Example: `"Shearwater Perdix 2"` → `DeviceIcon_Shearwater_Perdix_2`.
+  - Place a 132 × 132 px PNG (44 pt @ 3×) with a transparent background inside the folder.
+  - Add a `Contents.json` referencing the PNG as a single universal image (see any existing imageset for the template).
+  - If no product image is available, skip the imageset — the icon resolver falls back to the brand-level asset automatically.

@@ -33,6 +33,7 @@ import LibDCBridge
         ComputerModel(name: "Shearwater Perdix", family: .shearwaterPetrel, modelID: 5),
         ComputerModel(name: "Shearwater Perdix AI", family: .shearwaterPetrel, modelID: 6),
         ComputerModel(name: "Shearwater Perdix 2", family: .shearwaterPetrel, modelID: 11),
+        ComputerModel(name: "Shearwater Perdix 3", family: .shearwaterPetrel, modelID: 14),
         ComputerModel(name: "Shearwater Teric", family: .shearwaterPetrel, modelID: 8),
         ComputerModel(name: "Shearwater Tern", family: .shearwaterPetrel, modelID: 12),
         ComputerModel(name: "Shearwater NERD 2", family: .shearwaterPetrel, modelID: 7),
@@ -216,6 +217,7 @@ import LibDCBridge
         CBUUID(string: "ca7b0001-f785-4c38-b599-c7c5fbadb034"), // Pelagic i330R/DSX
         CBUUID(string: "fdcdeaaa-295d-470e-bf15-04217b7aa0a0"), // ScubaPro G2/G3
         CBUUID(string: "fe25c237-0ece-443c-b0aa-e02033e7029d"), // Shearwater Perdix/Teric
+        CBUUID(string: "1aa44039-1667-4b29-87cc-dfecaaf31d97"), // Shearwater Perdix 3
         CBUUID(string: "0000fcef-0000-1000-8000-00805f9b34fb"), // Divesoft Freedom
         CBUUID(string: "6e400001-b5a3-f393-e0a9-e50e24dc10b8"), // Cressi Goa
         CBUUID(string: "00000001-8c3b-4f2c-a59e-8c08224f3253"), // Halcyon Symbios
