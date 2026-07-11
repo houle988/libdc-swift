@@ -472,7 +472,7 @@ shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buf
 	}
 
 	// Transfer the init request.
-	rc = shearwater_common_transfer (device, req_init, sizeof (req_init), response, sizeof(response), &n);
+    rc = shearwater_common_transfer (device, req_init, sizeof (req_init), response, maxpacket, &n);
 	if (rc != DC_STATUS_SUCCESS) {
 		return rc;
 	}
@@ -510,7 +510,7 @@ shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buf
 	while (nbytes < size && !done) {
 		// Transfer the block request.
 		req_block[1] = block;
-		rc = shearwater_common_transfer (device, req_block, req_block_len, response, sizeof(response), &n);
+        rc = shearwater_common_transfer (device, req_block, req_block_len, response, maxpacket, &n);
 		if (rc != DC_STATUS_SUCCESS) {
 			return rc;
 		}

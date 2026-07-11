@@ -111,6 +111,41 @@ dc_status_t ble_set_timeout(ble_object_t *io, int timeout) {
 }
 
 dc_status_t ble_ioctl(ble_object_t *io, unsigned int request, void *data, size_t size) {
+    // DC_IOCTL_BLE_CHARACTERISTIC_READ: Cressi Goa/Cartesio/Leonardo read
+    // secondary BLE characteristics (e.g. 6E400003/4/5-...-10B8) during
+    // device_open to retrieve serial/model/firmware info.
+    if (request == DC_IOCTL_BLE_CHARACTERISTIC_READ) {
+        if (!data || size < sizeof(dc_ble_uuid_t)) {
+            return DC_STATUS_INVALIDARGS;
+        }
+
+        char uuidstr[DC_BLE_UUID_SIZE] = {0};
+        if (dc_ble_uuid2str((const unsigned char *)data, uuidstr, sizeof(uuidstr)) == NULL) {
+            return DC_STATUS_INVALIDARGS;
+        }
+
+        size_t want = size - sizeof(dc_ble_uuid_t);
+        NSString *uuid = [NSString stringWithUTF8String:uuidstr];
+
+        Class CoreBluetoothManagerClass = NSClassFromString(@"CoreBluetoothManager");
+        id<CoreBluetoothManagerProtocol> manager = [CoreBluetoothManagerClass shared];
+        double timeoutSecs = (io != NULL && io->timeout_ms > 0) ? io->timeout_ms / 1000.0 : 5.0;
+        NSData *value = [manager readCharacteristicByUUID:uuid timeout:timeoutSecs];
+        if (!value || value.length < want) {
+            NSLog(@"[BLE IOCTL] CHARACTERISTIC_READ failed for %@ (got %zu, need %zu)",
+                  uuid, value ? value.length : 0, want);
+            return DC_STATUS_IO;
+        }
+
+        memcpy((unsigned char *)data + sizeof(dc_ble_uuid_t), value.bytes, want);
+
+        if (get_libdc_loglevel() >= DC_LOGLEVEL_DEBUG) {
+            NSLog(@"[BLE IOCTL] CHARACTERISTIC_READ: %@ -> %zu bytes", uuid, want);
+        }
+
+        return DC_STATUS_SUCCESS;
+    }
+
     // Only DC_IOCTL_BLE_GET_NAME is implemented.  libdivecomputer's
     // oceanic_atom2_device_open() issues this ioctl during the handshake
     // for Aqualung / Oceanic / Sherwood models so it can embed the
