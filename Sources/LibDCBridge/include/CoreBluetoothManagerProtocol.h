@@ -22,6 +22,12 @@
 /// handshake.  Without this the READMEMORY command is answered with NAK
 /// (0xA5) instead of an ACK + payload.
 - (NSString *)getDeviceName;
+/// Read a secondary BLE characteristic by UUID and return its value.
+/// Used by BLEBridge.m to handle DC_IOCTL_BLE_CHARACTERISTIC_READ for
+/// devices like Cressi Goa that expose serial/model/firmware info on
+/// non-data characteristics.  Blocks until a value is received or the
+/// timeout (in seconds) expires; returns nil on failure.
+- (NSData *)readCharacteristicByUUID:(NSString *)uuid timeout:(double)seconds;
 @end
 
 #else

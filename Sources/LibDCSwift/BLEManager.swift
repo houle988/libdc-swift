@@ -85,6 +85,13 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
     private let queue = DispatchQueue(label: "com.blemanager.queue")
     private let dataAvailableSemaphore = DispatchSemaphore(value: 0) // Signals when new data arrives
     private let writeReadySemaphore = DispatchSemaphore(value: 0) // Signals when peripheral is ready for next write-without-response
+    private let writeConfirmSemaphore = DispatchSemaphore(value: 0) // Signals when a with-response write completes
+    private var lastWriteError: Error?            // guarded by queue
+    // Counts outstanding .withResponse callbacks that have not yet been received.
+    // BLE writes to the same characteristic are delivered FIFO, so when this
+    // count reaches zero the most recently received callback belongs to the
+    // current write — lastWriteError is therefore correct for that write.
+    private var pendingWriteCallbackCount: Int = 0 // guarded by queue
     private let frameMarker: UInt8 = 0x7E
     private var _deviceDataPtr: UnsafeMutablePointer<device_data_t>?
     private let deviceDataPtrLock = NSLock() // Protects _deviceDataPtr for cross-thread access
@@ -100,7 +107,14 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
     /// (notably Aqualung i300C) get enough time to respond to the initial
     /// VERSION query before libdivecomputer's 1 s default fires.
     private var hasReceivedFirstPacket: Bool = false
-    
+    private var characteristicsByUUID: [String: CBCharacteristic] = [:]
+    private var ioctlReadValue: Data?
+    private var ioctlReadCharUUID: String?
+    private var nordicUARTServiceUUID: String {
+        knownSerialServices.first { $0.vendor == "Nordic Semi" }?.uuid
+            ?? "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+    }
+
     // MARK: - Public Properties
     /// Thread-safe access to device data pointer with change notification.
     /// This property is set from the main queue (by openBLEDevice) and read from
@@ -311,7 +325,36 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
             }
             peripheral.writeValue(data, for: characteristic, type: .withoutResponse)
         } else {
+            // Count this write as one outstanding callback and clear any prior error.
+            // All writes go to a single writeCharacteristic per connection, so BLE
+            // FIFO ordering holds: callbacks arrive in write order, and
+            // pendingWriteCallbackCount reaching zero means the last callback
+            // received belongs to THIS write.  Late callbacks from previously
+            // timed-out writes simply decrement the counter without satisfying the
+            // wait — the loop keeps running until the count is zero.
+            // Each wait gets a fresh 5s deadline so draining stale callbacks from
+            // prior timeouts does not consume the current write's budget.
+            queue.sync {
+                lastWriteError = nil
+                pendingWriteCallbackCount += 1
+            }
             peripheral.writeValue(data, for: characteristic, type: .withResponse)
+            repeat {
+                let iterDeadline = DispatchTime.now() + .seconds(5)
+                guard writeConfirmSemaphore.wait(timeout: iterDeadline) == .success else {
+                    logWarning("[BLE WRITE] withResponse timed out waiting for confirmation (\(data?.count ?? 0) bytes)")
+                    return false
+                }
+            } while queue.sync(execute: { pendingWriteCallbackCount }) > 0
+            // If we exited because close() reset the counter, the peripheral is gone.
+            guard isPeripheralReady else {
+                logWarning("[BLE WRITE] Peripheral disconnected while waiting for write confirmation")
+                return false
+            }
+            if let err = queue.sync(execute: { lastWriteError }) {
+                logError("[BLE WRITE] withResponse error: \(err.localizedDescription)")
+                return false
+            }
         }
         return true
     }
@@ -449,6 +492,9 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         queue.sync {
             receivedPackets.removeAll()
             partialPacket.removeAll()
+            characteristicsByUUID.removeAll()
+            ioctlReadValue = nil
+            ioctlReadCharUUID = nil
         }
 
         // Drain and signal semaphore to unblock any waiting reads and clear stale signals
@@ -460,6 +506,13 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         // Also drain write-ready semaphore to unblock any waiting writes
         while writeReadySemaphore.wait(timeout: .now()) == .success { }
         writeReadySemaphore.signal()
+
+        // Unblock any write() blocked on writeConfirmSemaphore.
+        // Reset the pending count first so the repeat-while loop exits when it wakes.
+        // write() checks isPeripheralReady after exiting the loop and returns false.
+        queue.sync { pendingWriteCallbackCount = 0 }
+        while writeConfirmSemaphore.wait(timeout: .now()) == .success { }
+        writeConfirmSemaphore.signal()
 
         if clearDevicePtr {
             if let devicePtr = self.openedDeviceDataPtr {
@@ -773,18 +826,37 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
             return
         }
         
+        // Reset stale connection state before starting fresh discovery.
+        // Without this, reconnecting to a device with no recognised serial
+        // service leaves writeCharacteristic/notifyCharacteristic pointing
+        // at dead characteristics from the previous peripheral.
+        preferredService = nil
+        writeCharacteristic = nil
+        notifyCharacteristic = nil
+        queue.sync { characteristicsByUUID.removeAll() }
+
+        // Prefer vendor-specific service over generic Nordic UART.
+        // Cressi advertises both Nordic UART (…CA9E) and its own service (…10B8);
+        // libdivecomputer requires the vendor service.
+        var chosen: CBService?
+        var chosenIsNordic = false
+
         for service in services {
             if isExcludedService(service.uuid) {
                 continue
             }
-            
+
             if let knownService = isKnownSerialService(service.uuid) {
-                preferredService = service
-                writeCharacteristic = nil
-                notifyCharacteristic = nil
+                let isNordic = knownService.uuid.lowercased() == nordicUARTServiceUUID
+                if chosen == nil || (chosenIsNordic && !isNordic) {
+                    chosen = service
+                    chosenIsNordic = isNordic
+                }
             }
             peripheral.discoverCharacteristics(nil, for: service)
         }
+
+        preferredService = chosen
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
@@ -827,6 +899,12 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         // Pass 1: pick the FIRST .writeWithoutResponse / .notify we see.
         // Pass 2: only if no preferred match was found, fall back to the
         //         FIRST .write / .indicate characteristic.
+        queue.sync {
+            for characteristic in characteristics {
+                characteristicsByUUID[characteristic.uuid.uuidString.lowercased()] = characteristic
+            }
+        }
+
         for characteristic in characteristics {
             if writeCharacteristic == nil &&
                characteristic.properties.contains(.writeWithoutResponse) {
@@ -870,18 +948,32 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
             return
         }
         
+        var isIoctlRead = false
         queue.sync {
-            // Enqueue each BLE notification as a separate element to preserve
-            // packet boundaries.  readDataPartial dequeues one at a time.
-            receivedPackets.append(data)
+            if let uuidStr = ioctlReadCharUUID,
+               characteristic.uuid.uuidString.lowercased() == uuidStr {
+                // Route to ioctl read buffer instead of the normal packet queue.
+                // Do NOT set hasReceivedFirstPacket — ioctl reads fired during
+                // Cressi device_open must not collapse the 5s first-read floor
+                // that sleepy devices (i300C, Pelagic OEMs) depend on.
+                ioctlReadValue = data
+                isIoctlRead = true
+            } else {
+                // Enqueue each BLE notification as a separate element to preserve
+                // packet boundaries.  readDataPartial dequeues one at a time.
+                receivedPackets.append(data)
+                // Mark that a real protocol packet has arrived; subsequent reads
+                // use libdc's configured timeout, not the 5s first-read floor.
+                hasReceivedFirstPacket = true
+            }
         }
-        // Mark that the device has answered at least once so subsequent
-        // reads use libdc's configured timeout (no 5 s first-read floor).
-        hasReceivedFirstPacket = true
 
-        // Signal that data is available - wake up any waiting read
+        // Only signal readDataPartial for real protocol packets, not ioctl reads.
+        // Signalling on every notification accumulates spurious semaphore credits
+        // that readDataPartial drains as empty wake-sleep cycles.
+        if isIoctlRead { return }
+
         dataAvailableSemaphore.signal()
-
         updateTransferStats(data.count)
     }
 
@@ -889,6 +981,11 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         if let error = error {
             logError("Error writing to characteristic: \(error.localizedDescription)")
         }
+        queue.sync {
+            lastWriteError = error
+            if pendingWriteCallbackCount > 0 { pendingWriteCallbackCount -= 1 }
+        }
+        writeConfirmSemaphore.signal()
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
@@ -935,6 +1032,53 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
     private func isReadCharacteristic(_ characteristic: CBCharacteristic) -> Bool {
         return characteristic.properties.contains(.notify) ||
                characteristic.properties.contains(.indicate)
+    }
+
+    /// Read a BLE characteristic by UUID and return its value.
+    /// Called by BLEBridge.m to handle DC_IOCTL_BLE_CHARACTERISTIC_READ.
+    @objc(readCharacteristicByUUID:timeout:)
+    public func readCharacteristic(byUUID uuidString: String, timeout: Double) -> Data? {
+        let lower = uuidString.lowercased()
+        guard let peripheral = self.peripheral else {
+            logError("[BLE IOCTL] readCharacteristic: no peripheral connected")
+            return nil
+        }
+        guard let characteristic = queue.sync(execute: { characteristicsByUUID[lower] }) else {
+            logError("[BLE IOCTL] readCharacteristic: no characteristic found for UUID \(uuidString)")
+            return nil
+        }
+        guard characteristic.properties.contains(.read) else {
+            logError("[BLE IOCTL] readCharacteristic: characteristic \(uuidString) does not support .read")
+            return nil
+        }
+
+        // Set the routing flag just before issuing the read. A narrow window
+        // exists between setting the flag and readValue completing, during which
+        // a stale notification on the same UUID would be misrouted to ioctlReadValue.
+        // This is safe for Cressi version characteristics (read-only, no notifications).
+        queue.sync {
+            ioctlReadCharUUID = lower
+            ioctlReadValue = nil
+        }
+        defer {
+            queue.sync {
+                ioctlReadCharUUID = nil
+                ioctlReadValue = nil
+            }
+        }
+
+        peripheral.readValue(for: characteristic)
+
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        while Date() < deadline {
+            var value: Data?
+            queue.sync { value = ioctlReadValue }
+            if let v = value { return v }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+
+        logError("[BLE IOCTL] readCharacteristic: timeout waiting for value of \(uuidString)")
+        return nil
     }
 
     @objc public func close() {
