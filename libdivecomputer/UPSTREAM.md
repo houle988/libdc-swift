@@ -7,8 +7,8 @@ compiled as a SwiftPM target (autotools is not available in SwiftPM, so the libr
 
 | Field | Value |
 |---|---|
-| Upstream commit | `167c06520c055c67e8a4c4f1f92011dd3a0671d6` |
-| Upstream date | 2026-07-10 |
+| Upstream commit | `8e564eb5cf9fb4318af3d540895abb916e1809b0` |
+| Upstream date | 2026-07-13 |
 | Version | 0.10.0 |
 
 ## version.h
@@ -35,7 +35,7 @@ compiled as a SwiftPM target (autotools is not available in SwiftPM, so the libr
 
 1. Clone the upstream repo:
    ```
-   git clone --depth=1 --branch working https://github.com/houle988/libdivecomputer /tmp/libdivecomputer-upstream
+   git clone --depth=1 https://github.com/houle988/libdivecomputer /tmp/libdivecomputer-upstream
    ```
 2. Compare file lists (`src/` and `include/libdivecomputer/`) for new or removed files.
 3. Copy changed files, skipping the Windows-only ones listed above.

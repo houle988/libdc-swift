@@ -7,10 +7,10 @@ The fork diverges significantly from upstream; **never do a wholesale merge** â€
 
 | Field | Value |
 |---|---|
-| Upstream commit | `7251da90f6ecccb8346d2a9d90989c359ec51c79` |
-| Upstream date | 2026-07-02 |
-| Upstream tag | v1.5.0 |
-| Review date | 2026-07-10 |
+| Upstream commit | `20430bb` |
+| Upstream date | 2026-07-14 |
+| Upstream tag | â€” |
+| Review date | 2026-07-23 |
 
 ## Changes cherry-picked from upstream
 
