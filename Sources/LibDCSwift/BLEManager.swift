@@ -296,6 +296,8 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         guard let peripheral = self.peripheral,
               let characteristic = self.writeCharacteristic else { return false }
 
+        Logger.shared.logPacket(direction: .outbound, data: data, characteristicUUID: characteristic.uuid.uuidString)
+
         // If using write-without-response, briefly wait for the peripheral to
         // signal readiness.  This provides back-pressure when the BLE transmit
         // buffer is full.  However, we must NOT hard-fail on timeout because
@@ -947,7 +949,9 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         guard let data = characteristic.value else {
             return
         }
-        
+
+        Logger.shared.logPacket(direction: .inbound, data: data, characteristicUUID: characteristic.uuid.uuidString)
+
         var isIoctlRead = false
         queue.sync {
             if let uuidStr = ioctlReadCharUUID,
