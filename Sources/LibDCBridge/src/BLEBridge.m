@@ -204,12 +204,17 @@ dc_status_t ble_read(ble_object_t *io, void *buffer, size_t requested, size_t *a
 
     if (!partialData || partialData.length == 0) {
         *actual = 0;
-        // This is the most common cause of DC_STATUS_PROTOCOL errors upstream:
-        // readDataPartial timed out (3s) returning nil, which we report as IO error.
-        // In debug mode, log every occurrence to help correlate with protocol failures.
         if (get_libdc_loglevel() >= DC_LOGLEVEL_DEBUG) {
-            NSLog(@"[BLE READ] Timeout/empty: readDataPartial returned %@ (requested %zu bytes) -> DC_STATUS_IO",
+            NSLog(@"[BLE READ] Timeout/empty: readDataPartial returned %@ (requested %zu bytes)",
                   partialData == nil ? @"nil" : @"empty", requested);
+        }
+        // Under background BLE conditions iOS lengthens the connection interval,
+        // so a read timeout is often "not yet" rather than a broken link.
+        // Distinguish: if the peripheral is still connected, report TIMEOUT
+        // (libdivecomputer may retry on Oceanic/Aqualung); if genuinely
+        // disconnected, report IO (immediate abort on all families).
+        if ([manager getPeripheralReadyState]) {
+            return DC_STATUS_TIMEOUT;
         }
         return DC_STATUS_IO;
     }
@@ -223,13 +228,19 @@ dc_status_t ble_write(ble_object_t *io, const void *data, size_t size, size_t *a
     id<CoreBluetoothManagerProtocol> manager = [CoreBluetoothManagerClass shared];
     NSData *nsData = [NSData dataWithBytes:data length:size];
     
-    if ([manager writeData:nsData]) {
-        *actual = size;
-        return DC_STATUS_SUCCESS;
-    } else {
-        *actual = 0;
-        NSLog(@"[BLE WRITE] ERROR: writeData returned false (%zu bytes)", size);
-        return DC_STATUS_IO;
+    NSInteger result = [manager writeData:nsData];
+    switch (result) {
+        case 0:
+            *actual = size;
+            return DC_STATUS_SUCCESS;
+        case 1:
+            // Transient write-confirmation timeout — libdivecomputer may retry.
+            *actual = 0;
+            return DC_STATUS_TIMEOUT;
+        default:
+            *actual = 0;
+            NSLog(@"[BLE WRITE] ERROR: writeData failed (%zu bytes)", size);
+            return DC_STATUS_IO;
     }
 }
 
