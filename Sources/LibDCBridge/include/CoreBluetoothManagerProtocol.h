@@ -10,7 +10,9 @@
 - (BOOL)getPeripheralReadyState;
 - (BOOL)discoverServices;
 - (BOOL)enableNotifications;
-- (BOOL)writeData:(NSData *)data;
+// Returns 0 on success, 1 if the write timed out waiting for a with-response
+// confirmation (transient — libdivecomputer may retry), 2 for a hard failure.
+- (NSInteger)writeData:(NSData *)data;
 - (NSData *)readDataPartial:(int)requested;
 - (void)setTimeout:(int)timeoutMs;
 - (void)close;

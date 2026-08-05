@@ -147,7 +147,7 @@ public class GenericParser {
                 data.tempMaximum = max(data.tempMaximum, temp)
                 data.lastTemperature = temp
                 // Store surface temperature if not set
-                if data.tempSurface == 0 {
+                if !data.tempSurface.isFinite {
                     data.tempSurface = temp
                 }
             }
@@ -518,9 +518,9 @@ public class GenericParser {
             gasMixes: wrapper.data.gasMixes.isEmpty ? nil : wrapper.data.gasMixes,
             salinity: wrapper.data.salinity,
             atmospheric: wrapper.data.atmospheric,
-            surfaceTemperature: wrapper.data.tempSurface,
-            minTemperature: wrapper.data.tempMinimum,
-            maxTemperature: wrapper.data.tempMaximum,
+            surfaceTemperature: wrapper.data.tempSurface.isFinite ? wrapper.data.tempSurface : nil,
+            minTemperature: wrapper.data.tempMinimum.isFinite ? wrapper.data.tempMinimum : nil,
+            maxTemperature: wrapper.data.tempMaximum.isFinite ? wrapper.data.tempMaximum : nil,
             tankCount: wrapper.data.tanks.count,
             tanks: wrapper.data.tanks,
             diveMode: diveMode,

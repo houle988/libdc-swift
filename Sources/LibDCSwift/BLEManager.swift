@@ -292,9 +292,11 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         return nil
     }
     
-    @objc public func write(_ data: Data!) -> Bool {
+    /// Returns 0 on success, 1 on a transient with-response confirmation timeout
+    /// (libdivecomputer may retry on Oceanic/Aqualung), 2 on hard failure.
+    @objc public func write(_ data: Data!) -> Int {
         guard let peripheral = self.peripheral,
-              let characteristic = self.writeCharacteristic else { return false }
+              let characteristic = self.writeCharacteristic else { return 2 }
 
         Logger.shared.logPacket(direction: .outbound, data: data, characteristicUUID: characteristic.uuid.uuidString)
 
@@ -345,20 +347,20 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
                 let iterDeadline = DispatchTime.now() + .seconds(5)
                 guard writeConfirmSemaphore.wait(timeout: iterDeadline) == .success else {
                     logWarning("[BLE WRITE] withResponse timed out waiting for confirmation (\(data?.count ?? 0) bytes)")
-                    return false
+                    return 1
                 }
             } while queue.sync(execute: { pendingWriteCallbackCount }) > 0
             // If we exited because close() reset the counter, the peripheral is gone.
             guard isPeripheralReady else {
                 logWarning("[BLE WRITE] Peripheral disconnected while waiting for write confirmation")
-                return false
+                return 2
             }
             if let err = queue.sync(execute: { lastWriteError }) {
                 logError("[BLE WRITE] withResponse error: \(err.localizedDescription)")
-                return false
+                return 2
             }
         }
-        return true
+        return 0
     }
     
     @objc public func readDataPartial(_ requested: Int32) -> Data? {
@@ -511,7 +513,7 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
 
         // Unblock any write() blocked on writeConfirmSemaphore.
         // Reset the pending count first so the repeat-while loop exits when it wakes.
-        // write() checks isPeripheralReady after exiting the loop and returns false.
+        // write() checks isPeripheralReady after exiting the loop and returns 2.
         queue.sync { pendingWriteCallbackCount = 0 }
         while writeConfirmSemaphore.wait(timeout: .now()) == .success { }
         writeConfirmSemaphore.signal()
@@ -709,6 +711,7 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
     }
     
     // MARK: - CBCentralManagerDelegate Methods
+
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
         case .poweredOn:

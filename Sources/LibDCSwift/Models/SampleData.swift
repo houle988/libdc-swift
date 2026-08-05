@@ -14,7 +14,7 @@ public struct SampleData {
     var maxTime: TimeInterval = 0  // Track the maximum time
     
     // Temperature tracking
-    var tempSurface: Double = 0        // Surface temperature
+    var tempSurface: Double = Double.infinity  // Surface temperature
     var tempMinimum: Double = Double.infinity  // Minimum temperature
     var tempMaximum: Double = -Double.infinity // Maximum temperature
     

@@ -4,7 +4,10 @@ import Clibdivecomputer
 import LibDCBridge
 
 @objc public class DeviceConfiguration: NSObject {
-    
+    // Serializes openBLEDevice so at most one connection attempt is in flight
+    // at any time, regardless of which thread or caller initiates it.
+    private static let connectionLock = NSLock()
+
     // Helper struct for UI Selection
     public struct ComputerModel: Identifiable, Hashable {
         public let id = UUID()
@@ -228,8 +231,20 @@ import LibDCBridge
         return knownServiceUUIDs
     }
 
-    /// Attempts to open a BLE connection to a dive computer.
+    /// Attempts to open a BLE connection to a dive computer. Serialized via
+    /// connectionLock so concurrent callers queue rather than race on the
+    /// shared libdivecomputer connection state.
     public static func openBLEDevice(
+        name: String,
+        deviceAddress: String,
+        forcedModel: (family: DeviceFamily, model: UInt32)? = nil
+    ) -> Bool {
+        connectionLock.lock()
+        defer { connectionLock.unlock() }
+        return openBLEDeviceLocked(name: name, deviceAddress: deviceAddress, forcedModel: forcedModel)
+    }
+
+    private static func openBLEDeviceLocked(
         name: String,
         deviceAddress: String,
         forcedModel: (family: DeviceFamily, model: UInt32)? = nil
