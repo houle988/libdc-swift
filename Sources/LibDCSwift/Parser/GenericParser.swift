@@ -108,16 +108,20 @@ public class GenericParser {
     private class SampleDataWrapper {
         /// The collected sample data
         var data = SampleData()
-        
-        /// Adds a new profile point from current sample data
-        func addProfilePoint() {
-            // Extract deco data
+        /// True once the first DC_SAMPLE_TIME has fired — defers the flush so each profile
+        /// point is stamped with its own time, not the following interval's (Finding 3/4).
+        var hasSeenTime = false
+
+        /// Builds a DiveProfilePoint from the current accumulator state without modifying it.
+        /// - Parameters:
+        ///   - events: Events to attach (empty for a normal interval flush).
+        ///   - currentGas: Gas mix index to record; nil falls back to `data.gasmix`.
+        func makeProfilePoint(events: [DiveEvent] = [], currentGas: Int? = nil) -> DiveProfilePoint {
             let ndl = data.deco?.type == DC_DECO_NDL ? data.deco?.time : nil
             let decoStop = data.deco?.type == DC_DECO_DECOSTOP ? data.deco?.depth : nil
             let decoTime = data.deco?.type == DC_DECO_DECOSTOP ? data.deco?.time : nil
             let tts = data.deco?.tts
-
-            let point = DiveProfilePoint(
+            return DiveProfilePoint(
                 time: data.time,
                 depth: data.depth,
                 temperature: data.temperature,
@@ -125,25 +129,32 @@ public class GenericParser {
                 pressures: data.currentPressures,
                 po2: data.currentVotedPPO2,
                 sensorPPO2: data.currentPPO2,
+                events: events,
                 ndl: ndl,
                 decoStop: decoStop,
                 decoTime: decoTime,
                 tts: tts,
-                currentGas: data.gasmix,
+                currentGas: currentGas ?? data.gasmix,
                 cns: data.cns,
                 rbt: data.rbt,
                 heartbeat: data.heartbeat,
                 bearing: data.bearing,
                 setpoint: data.setpoint
             )
+        }
+
+        /// Flushes the current accumulator state as a profile point, resets per-interval
+        /// accumulators, and updates aggregate trackers.
+        func addProfilePoint() {
+            let point = makeProfilePoint()
             data.profile.append(point)
             data.currentPressures = [:]
             data.currentPPO2 = [:]
             data.currentVotedPPO2 = nil
-            
+
             // Update maximum time
             data.maxTime = max(data.maxTime, data.time)
-            
+
             // Track temperature ranges
             if let temp = data.temperature {
                 data.tempMinimum = min(data.tempMinimum, temp)
@@ -247,8 +258,14 @@ public class GenericParser {
             
             switch type {
             case DC_SAMPLE_TIME:
+                // Flush the PREVIOUS interval before advancing time. depth/temperature/PPO2
+                // for THIS interval arrive after this callback (libdc order: TIME→DEPTH→PPO2…).
+                // Guard on hasSeenTime so the very first TIME does not flush an empty state.
+                if wrapper.hasSeenTime {
+                    wrapper.addProfilePoint()
+                }
+                wrapper.hasSeenTime = true
                 wrapper.data.time = TimeInterval(value.time) / 1000.0
-                wrapper.addProfilePoint()
                 
             case DC_SAMPLE_DEPTH:
                 wrapper.data.depth = value.depth
@@ -293,31 +310,7 @@ public class GenericParser {
                 }
                 
                 // Add the events to the current point with all available data
-                let ndl = wrapper.data.deco?.type == DC_DECO_NDL ? wrapper.data.deco?.time : nil
-                let decoStop = wrapper.data.deco?.type == DC_DECO_DECOSTOP ? wrapper.data.deco?.depth : nil
-                let decoTime = wrapper.data.deco?.type == DC_DECO_DECOSTOP ? wrapper.data.deco?.time : nil
-                let tts = wrapper.data.deco?.tts
-
-                let point = DiveProfilePoint(
-                    time: wrapper.data.time,
-                    depth: wrapper.data.depth,
-                    temperature: wrapper.data.temperature,
-                    pressure: wrapper.data.pressure.last?.value,
-                    pressures: wrapper.data.currentPressures,
-                    po2: wrapper.data.currentVotedPPO2,
-                    sensorPPO2: wrapper.data.currentPPO2,
-                    events: events,
-                    ndl: ndl,
-                    decoStop: decoStop,
-                    decoTime: decoTime,
-                    tts: tts,
-                    currentGas: wrapper.data.gasmix,
-                    cns: wrapper.data.cns,
-                    rbt: wrapper.data.rbt,
-                    heartbeat: wrapper.data.heartbeat,
-                    bearing: wrapper.data.bearing,
-                    setpoint: wrapper.data.setpoint
-                )
+                let point = wrapper.makeProfilePoint(events: events)
                 wrapper.data.profile.append(point)
                 // currentPPO2/currentVotedPPO2 intentionally NOT reset — synthetic event point shares
                 // the in-progress window; reset happens on the next DC_SAMPLE_TIME.
@@ -386,30 +379,7 @@ public class GenericParser {
                         wrapper.data.profile.last?.time == wrapper.data.time &&
                         wrapper.data.profile.last?.events.contains(.gasChange) == true
                     if !alreadyHasGasChangeAtThisTime {
-                        let ndl = wrapper.data.deco?.type == DC_DECO_NDL ? wrapper.data.deco?.time : nil
-                        let decoStop = wrapper.data.deco?.type == DC_DECO_DECOSTOP ? wrapper.data.deco?.depth : nil
-                        let decoTime = wrapper.data.deco?.type == DC_DECO_DECOSTOP ? wrapper.data.deco?.time : nil
-                        let tts = wrapper.data.deco?.tts
-                        let point = DiveProfilePoint(
-                            time: wrapper.data.time,
-                            depth: wrapper.data.depth,
-                            temperature: wrapper.data.temperature,
-                            pressure: wrapper.data.pressure.last?.value,
-                            pressures: wrapper.data.currentPressures,
-                            po2: wrapper.data.currentVotedPPO2,
-                            sensorPPO2: wrapper.data.currentPPO2,
-                            events: [.gasChange],
-                            ndl: ndl,
-                            decoStop: decoStop,
-                            decoTime: decoTime,
-                            tts: tts,
-                            currentGas: newGasMix,
-                            cns: wrapper.data.cns,
-                            rbt: wrapper.data.rbt,
-                            heartbeat: wrapper.data.heartbeat,
-                            bearing: wrapper.data.bearing,
-                            setpoint: wrapper.data.setpoint
-                        )
+                        let point = wrapper.makeProfilePoint(events: [.gasChange], currentGas: newGasMix)
                         wrapper.data.profile.append(point)
                         // currentPPO2/currentVotedPPO2 intentionally NOT reset — synthetic gas-change
                         // point shares the in-progress window; reset happens on the next DC_SAMPLE_TIME.
@@ -427,13 +397,19 @@ public class GenericParser {
         }
         
         let samplesStatus = dc_parser_samples_foreach(parser, sampleCallback, wrapperPtr)
-        
+
         // Release the wrapper after we're done
         Unmanaged<SampleDataWrapper>.fromOpaque(wrapperPtr).release()
         guard samplesStatus == DC_STATUS_SUCCESS else {
             throw ParserError.sampleProcessingFailed(samplesStatus)
         }
-        
+
+        // Post-loop flush: the deferred-flush model leaves the last interval's depth/PPO2/pressure
+        // in the accumulators — no further DC_SAMPLE_TIME arrives to emit it (Finding 4).
+        if wrapper.hasSeenTime {
+            wrapper.addProfilePoint()
+        }
+
         // Get gas mix information
         if let gasmixCount: UInt32 = getField(parser, type: DC_FIELD_GASMIX_COUNT) {
             for i in 0..<gasmixCount {
