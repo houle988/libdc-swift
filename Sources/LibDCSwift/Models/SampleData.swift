@@ -51,7 +51,9 @@ public struct SampleData {
     
     // Rebreather data
     var setpoint: Double?               // Setpoint value
-    var ppo2: [(sensor: UInt32, value: Double)] = []  // PPO2 readings
+    var ppo2: [(sensor: UInt32, value: Double)] = []  // PPO2 readings (cumulative across dive)
+    var currentPPO2: [Int: Double] = [:]              // Per-sensor PPO2 for the current sample {sensorIndex: bar}
+    var currentVotedPPO2: Double?                      // Voted PPO2 (sensor 0xFFFFFFFF) for current sample
     var cns: Double?                    // CNS percentage
     
     // Events and warnings

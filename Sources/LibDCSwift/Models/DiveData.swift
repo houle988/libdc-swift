@@ -64,7 +64,8 @@ public struct DiveProfilePoint {
     public let temperature: Double?
     public let pressure: Double?
     public let pressures: [Int: Double]  // Per-tank pressure readings {tankIndex: bar}
-    public let po2: Double?  // Oxygen partial pressure
+    public let po2: Double?  // Oxygen partial pressure (voted/representative)
+    public let sensorPPO2: [Int: Double]  // Per-O2-sensor PPO2 {sensorIndex: bar}; empty for non-CCR
     public let pn2: Double?  // Nitrogen partial pressure
     public let phe: Double?  // Helium partial pressure
     public let events: [DiveEvent]
@@ -92,6 +93,7 @@ public struct DiveProfilePoint {
         pressure: Double? = nil,
         pressures: [Int: Double] = [:],
         po2: Double? = nil,
+        sensorPPO2: [Int: Double] = [:],
         pn2: Double? = nil,
         phe: Double? = nil,
         events: [DiveEvent] = [],
@@ -112,6 +114,7 @@ public struct DiveProfilePoint {
         self.pressure = pressure
         self.pressures = pressures
         self.po2 = po2
+        self.sensorPPO2 = sensorPPO2
         self.pn2 = pn2
         self.phe = phe
         self.events = events
@@ -264,6 +267,10 @@ public struct DiveData: Identifiable {
     
     // Rebreather data
     public var setpoint: Double?
+    /// Per-physical-sensor PPO₂ readings accumulated across the dive.
+    /// Contains only readings from physical O2 cells (sensor index 0, 1, 2, …).
+    /// Voted/controller values (DC_SENSOR_NONE / 0xFFFFFFFF) are excluded — access
+    /// those via each DiveProfilePoint's `po2` field instead.
     public var ppo2Readings: [(sensor: UInt32, value: Double)]
     public var cns: Double?
     

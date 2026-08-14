@@ -123,7 +123,8 @@ public class GenericParser {
                 temperature: data.temperature,
                 pressure: data.pressure.last?.value,
                 pressures: data.currentPressures,
-                po2: data.ppo2.last?.value,
+                po2: data.currentVotedPPO2,
+                sensorPPO2: data.currentPPO2,
                 ndl: ndl,
                 decoStop: decoStop,
                 decoTime: decoTime,
@@ -137,6 +138,8 @@ public class GenericParser {
             )
             data.profile.append(point)
             data.currentPressures = [:]
+            data.currentPPO2 = [:]
+            data.currentVotedPPO2 = nil
             
             // Update maximum time
             data.maxTime = max(data.maxTime, data.time)
@@ -301,7 +304,8 @@ public class GenericParser {
                     temperature: wrapper.data.temperature,
                     pressure: wrapper.data.pressure.last?.value,
                     pressures: wrapper.data.currentPressures,
-                    po2: wrapper.data.ppo2.last?.value,
+                    po2: wrapper.data.currentVotedPPO2,
+                    sensorPPO2: wrapper.data.currentPPO2,
                     events: events,
                     ndl: ndl,
                     decoStop: decoStop,
@@ -315,7 +319,9 @@ public class GenericParser {
                     setpoint: wrapper.data.setpoint
                 )
                 wrapper.data.profile.append(point)
-                
+                // currentPPO2/currentVotedPPO2 intentionally NOT reset — synthetic event point shares
+                // the in-progress window; reset happens on the next DC_SAMPLE_TIME.
+
             case DC_SAMPLE_RBT:
                 wrapper.data.rbt = value.rbt
                 
@@ -329,10 +335,16 @@ public class GenericParser {
                 wrapper.data.setpoint = value.setpoint
                 
             case DC_SAMPLE_PPO2:
-                wrapper.data.ppo2.append((
-                    sensor: value.ppo2.sensor,
-                    value: value.ppo2.value
-                ))
+                if value.ppo2.sensor == DC_SENSOR_NONE {
+                    // DC_SENSOR_NONE — libdivecomputer sentinel for voted/controller value; not a physical cell
+                    wrapper.data.currentVotedPPO2 = value.ppo2.value
+                } else {
+                    wrapper.data.currentPPO2[Int(value.ppo2.sensor)] = value.ppo2.value
+                    wrapper.data.ppo2.append((
+                        sensor: value.ppo2.sensor,
+                        value: value.ppo2.value
+                    ))
+                }
                 
             case DC_SAMPLE_CNS:
                 wrapper.data.cns = value.cns * 100.0  // Convert to percentage
@@ -360,7 +372,7 @@ public class GenericParser {
                 }
 
             case DC_SAMPLE_GASMIX:
-                let gasMixUnknown = Int(UInt32.max)
+                let gasMixUnknown = Int(DC_GASMIX_UNKNOWN)
                 let newGasMix = Int(value.gasmix)
                 // Synthesize a gasChange event when the active gas mix changes.
                 // Skip DC_GASMIX_UNKNOWN (0xFFFFFFFF) which Shearwater sends for tanks without AI transmitters.
@@ -384,7 +396,8 @@ public class GenericParser {
                             temperature: wrapper.data.temperature,
                             pressure: wrapper.data.pressure.last?.value,
                             pressures: wrapper.data.currentPressures,
-                            po2: wrapper.data.ppo2.last?.value,
+                            po2: wrapper.data.currentVotedPPO2,
+                            sensorPPO2: wrapper.data.currentPPO2,
                             events: [.gasChange],
                             ndl: ndl,
                             decoStop: decoStop,
@@ -398,6 +411,8 @@ public class GenericParser {
                             setpoint: wrapper.data.setpoint
                         )
                         wrapper.data.profile.append(point)
+                        // currentPPO2/currentVotedPPO2 intentionally NOT reset — synthetic gas-change
+                        // point shares the in-progress window; reset happens on the next DC_SAMPLE_TIME.
                     }
                 }
                 // Only update the previous-gas tracker when the new mix is real —
