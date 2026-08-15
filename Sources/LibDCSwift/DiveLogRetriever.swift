@@ -375,7 +375,7 @@ public class DiveLogRetriever {
                         dt.hour     = Int32(hour)
                         dt.minute   = Int32(minute)
                         dt.second   = Int32(second)
-                        dt.timezone = Int32(TimeZone.current.secondsFromGMT(for: now) / 60)
+                        dt.timezone = Int32(TimeZone.current.secondsFromGMT(for: now))
                         let clockStatus = dc_device_timesync(dcDevice, &dt)
                         switch clockStatus {
                         case DC_STATUS_SUCCESS:

@@ -178,7 +178,7 @@ static dc_status_t ble_stream_read(dc_iostream_t *iostream, void *data, size_t s
 static dc_status_t ble_stream_write(dc_iostream_t *iostream, const void *data, size_t size, size_t *actual)
 {
     debug_hexdump("WRITE", data, size);
-    
+
     ble_stream_t *s = (ble_stream_t *) iostream;
     dc_status_t rc = ble_write(s->ble_object, data, size, actual);
 
@@ -270,19 +270,19 @@ static void ble_device_event_cb(dc_device_t *device, dc_event_type_t event, cons
 {
     device_data_t *devdata = (device_data_t *)userdata;
     if (!devdata) return;
-    
+
     switch (event) {
     case DC_EVENT_DEVINFO:
         {
             const dc_event_devinfo_t *devinfo = (const dc_event_devinfo_t *)data;
             devdata->devinfo = *devinfo;
             devdata->have_devinfo = 1;
-            
+
             // Look up fingerprint using callback if available
             if (devdata->lookup_fingerprint && devdata->model) {
                 char serial[16];
                 snprintf(serial, sizeof(serial), "%08x", devinfo->serial);
-                
+
                 size_t fsize = 0;
                 unsigned char *fingerprint = devdata->lookup_fingerprint(
                     devdata->fingerprint_context,
@@ -290,7 +290,7 @@ static void ble_device_event_cb(dc_device_t *device, dc_event_type_t event, cons
                     serial,
                     &fsize
                 );
-                
+
                 if (fingerprint && fsize > 0) {
                     printf("[C] Setting fingerprint on device: ");
                     for (size_t i = 0; i < fsize; i++) {
@@ -327,18 +327,18 @@ static void ble_device_event_cb(dc_device_t *device, dc_event_type_t event, cons
  *------------------------------------------------------------------*/
 static void close_device_data(device_data_t *data) {
     if (!data) return;
-            
+
     if (data->fingerprint) {
         free(data->fingerprint);
         data->fingerprint = NULL;
         data->fsize = 0;
     }
-    
+
     if (data->model) {
         free((void*)data->model);
         data->model = NULL;
     }
-    
+
     if (data->device) {
         dc_device_close(data->device);
         data->device = NULL;
@@ -370,7 +370,7 @@ dc_status_t open_ble_device(device_data_t *data, const char *devaddr, dc_family_
 
     // Initialize all pointers to NULL
     memset(data, 0, sizeof(device_data_t));
-    
+
     // Create context
     rc = dc_context_new(&data->context);
     if (rc != DC_STATUS_SUCCESS) {
@@ -465,7 +465,7 @@ dc_status_t open_ble_device(device_data_t *data, const char *devaddr, dc_family_
  *------------------------------------------------------------------*/
  dc_status_t find_descriptor_by_model(dc_descriptor_t **out_descriptor,
     dc_family_t family, unsigned int model) {
-    
+
     dc_iterator_t *iterator = NULL;
     dc_descriptor_t *descriptor = NULL;
     dc_status_t rc;
@@ -537,41 +537,46 @@ static const struct name_pattern name_patterns[] = {
     { "Perdix", "Shearwater", "Perdix", MATCH_EXACT },
     { "Teric", "Shearwater", "Teric", MATCH_EXACT },
     { "Peregrine TX", "Shearwater", "Peregrine TX", MATCH_EXACT },
-    { "Peregrine", "Shearwater", "Peregrine TX", MATCH_EXACT },  // BLE advertises as "Peregrine" but hardware is Peregrine TX
-    { "NERD 2", "Shearwater", "NERD 2", MATCH_EXACT },
-    { "NERD", "Shearwater", "NERD", MATCH_EXACT },
-    { "Tern", "Shearwater", "Tern", MATCH_EXACT },
-    
+    { "Peregrine", "Shearwater", "Peregrine", MATCH_EXACT },
+    { "NERD 2", "Shearwater", "Nerd 2", MATCH_EXACT },
+    { "NERD", "Shearwater", "Nerd", MATCH_PREFIX },
+    { "Tern SC", "Shearwater", "Tern", MATCH_PREFIX },
+    { "Tern", "Shearwater", "Tern", MATCH_PREFIX },
+
     // Suunto dive computers
     { "EON Steel", "Suunto", "EON Steel", MATCH_EXACT },
     { "Suunto D5", "Suunto", "D5", MATCH_EXACT },
     { "EON Core", "Suunto", "EON Core", MATCH_EXACT },
-    
+
     // Scubapro dive computers
-    { "G2", "Scubapro", "G2", MATCH_EXACT },
-    { "HUD", "Scubapro", "G2 HUD", MATCH_EXACT },
-    { "G3", "Scubapro", "G3", MATCH_EXACT },
+    { "G2 HUD", "Scubapro", "G2 HUD", MATCH_PREFIX },  // must precede "G2" — "G2 HUD" starts with "G2"
+    { "HUD", "Scubapro", "G2 HUD", MATCH_PREFIX },
+    { "G2", "Scubapro", "G2", MATCH_PREFIX },
+    { "G3", "Scubapro", "G3", MATCH_PREFIX },
+    { "Aladin A1", "Scubapro", "Aladin A1", MATCH_PREFIX },  // must precede "Aladin" — strstr would else force Sport Matrix
+    { "Aladin A2", "Scubapro", "Aladin A2", MATCH_PREFIX },  // must precede "Aladin"
     { "Aladin", "Scubapro", "Aladin Sport Matrix", MATCH_EXACT },
-    { "A1", "Scubapro", "Aladin A1", MATCH_EXACT },
-    { "A2", "Scubapro", "Aladin A2", MATCH_EXACT },
+    { "A1", "Scubapro", "Aladin A1", MATCH_PREFIX },
+    { "A2", "Scubapro", "Aladin A2", MATCH_PREFIX },
     { "Luna 2.0 AI", "Scubapro", "Luna 2.0 AI", MATCH_EXACT },
     { "Luna 2.0", "Scubapro", "Luna 2.0", MATCH_EXACT },
-    
+
     // Mares dive computers
     { "Mares Genius", "Mares", "Genius", MATCH_EXACT },
-    { "Sirius", "Mares", "Sirius", MATCH_EXACT },
+    { "Sirius L", "Mares", "Sirius L", MATCH_PREFIX },
+    { "Sirius", "Mares", "Sirius", MATCH_PREFIX },
     { "Quad Ci", "Mares", "Quad Ci", MATCH_EXACT },
     { "Puck4", "Mares", "Puck 4", MATCH_EXACT },
-    
+
     // Cressi dive computers - use prefix matching
     { "CARESIO_", "Cressi", "Cartesio", MATCH_PREFIX },
     { "GOA_", "Cressi", "Goa", MATCH_PREFIX },
     { "Leonardo", "Cressi", "Leonardo 2.0", MATCH_CONTAINS },
     { "Donatello", "Cressi", "Donatello", MATCH_CONTAINS },
     { "Michelangelo", "Cressi", "Michelangelo", MATCH_CONTAINS },
-    { "Neon", "Cressi", "Neon", MATCH_CONTAINS },
-    { "Nepto", "Cressi", "Nepto", MATCH_CONTAINS },
-    
+    { "Neon", "Cressi", "Neon", MATCH_PREFIX },
+    { "Nepto", "Cressi", "Nepto", MATCH_PREFIX },
+
     // Heinrichs Weikamp dive computers
     { "OSTC 3", "Heinrichs Weikamp", "OSTC Plus", MATCH_EXACT },
     { "OSTC s#", "Heinrichs Weikamp", "OSTC Sport", MATCH_EXACT },
@@ -580,23 +585,23 @@ static const struct name_pattern name_patterns[] = {
     { "OSTC 2-", "Heinrichs Weikamp", "OSTC 2N", MATCH_EXACT },
     { "OSTC + ", "Heinrichs Weikamp", "OSTC 2", MATCH_EXACT },
     { "OSTC", "Heinrichs Weikamp", "OSTC 2", MATCH_EXACT },
-    
+
     // Deepblu dive computers
     { "COSMIQ", "Deepblu", "Cosmiq+", MATCH_EXACT },
-    
+
     // Oceans dive computers
-    { "S1", "Oceans", "S1", MATCH_EXACT },
-    
+    { "S1", "Oceans", "S1", MATCH_PREFIX },
+
     // McLean dive computers
     { "McLean Extreme", "McLean", "Extreme", MATCH_EXACT },
-    
+
     // Tecdiving dive computers
     { "DiveComputer", "Tecdiving", "DiveComputer.eu", MATCH_EXACT },
-    
+
     // Ratio dive computers
-    { "DS", "Ratio", "iX3M 2021 GPS Easy", MATCH_EXACT },
-    { "IX5M", "Ratio", "iX3M 2021 GPS Easy", MATCH_EXACT },
-    { "RATIO-", "Ratio", "iX3M 2021 GPS Easy", MATCH_EXACT }
+    { "DS", "Ratio", "iX3M 2021 GPS Easy", MATCH_PREFIX },
+    { "IX5M", "Ratio", "iX3M 2021 GPS Easy", MATCH_PREFIX },
+    { "RATIO-", "Ratio", "iX3M 2021 GPS Easy", MATCH_PREFIX }
 };
 
 dc_status_t find_descriptor_by_name(dc_descriptor_t **out_descriptor, const char *name) {
@@ -607,7 +612,7 @@ dc_status_t find_descriptor_by_name(dc_descriptor_t **out_descriptor, const char
     // First try to match against known patterns
     for (size_t i = 0; i < sizeof(name_patterns)/sizeof(name_patterns[0]); i++) {
         bool matches = false;
-        
+
         switch (name_patterns[i].match_type) {
             case MATCH_EXACT:
                 matches = (strstr(name, name_patterns[i].prefix) != NULL);
@@ -654,7 +659,7 @@ dc_status_t find_descriptor_by_name(dc_descriptor_t **out_descriptor, const char
 
     while ((rc = dc_iterator_next(iterator, &descriptor)) == DC_STATUS_SUCCESS) {
         unsigned int transports = dc_descriptor_get_transports(descriptor);
-        
+
         if ((transports & DC_TRANSPORT_BLE) &&
             dc_descriptor_filter(descriptor, DC_TRANSPORT_BLE, name)) {
             *out_descriptor = descriptor;
@@ -701,7 +706,7 @@ char* get_formatted_device_name(const char *name) {
 
     const char *vendor = dc_descriptor_get_vendor(descriptor);
     const char *product = dc_descriptor_get_product(descriptor);
-    
+
     if (vendor && product) {
         size_t len = strlen(vendor) + strlen(product) + 2; // +2 for space and null terminator
         result = (char*)malloc(len);
@@ -723,11 +728,11 @@ dc_status_t open_ble_device_with_identification(device_data_t **out_data,
 {
     device_data_t *data = (device_data_t*)calloc(1, sizeof(device_data_t));
     if (!data) return DC_STATUS_NOMEMORY;
-    
+
     dc_family_t family;
     unsigned int model;
     dc_status_t rc;
-    
+
     // Try stored configuration first if provided
     if (stored_family != DC_FAMILY_NULL && stored_model != 0) {
         rc = open_ble_device(data, address, stored_family, stored_model);
@@ -736,14 +741,14 @@ dc_status_t open_ble_device_with_identification(device_data_t **out_data,
             return DC_STATUS_SUCCESS;
         }
     }
-    
+
     // Fall back to identification if stored config failed or wasn't provided
     rc = get_device_info_from_name(name, &family, &model);
     if (rc != DC_STATUS_SUCCESS) {
         free(data);
         return rc;
     }
-    
+
     // Skip if name-based detection resolves to the same device family we
     // already tried - retrying with a slightly different model number for
     // the same protocol family won't help and creates BLE races.
@@ -751,13 +756,13 @@ dc_status_t open_ble_device_with_identification(device_data_t **out_data,
         free(data);
         return DC_STATUS_IO;
     }
-    
+
     rc = open_ble_device(data, address, family, model);
     if (rc != DC_STATUS_SUCCESS) {
         free(data);
         return rc;
     }
-    
+
     *out_data = data;
     return DC_STATUS_SUCCESS;
 }

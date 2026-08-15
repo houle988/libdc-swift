@@ -39,6 +39,7 @@ import LibDCBridge
         ComputerModel(name: "Shearwater Perdix 3", family: .shearwaterPetrel, modelID: 14),
         ComputerModel(name: "Shearwater Teric", family: .shearwaterPetrel, modelID: 8),
         ComputerModel(name: "Shearwater Tern", family: .shearwaterPetrel, modelID: 12),
+        ComputerModel(name: "Shearwater Tern TX", family: .shearwaterPetrel, modelID: 12),
         ComputerModel(name: "Shearwater NERD 2", family: .shearwaterPetrel, modelID: 7),
         
         // Suunto computers
@@ -55,6 +56,7 @@ import LibDCBridge
         ComputerModel(name: "Scubapro G3", family: .uwatecSmart, modelID: 0x34),
         ComputerModel(name: "Scubapro Aladin A1", family: .uwatecSmart, modelID: 0x25),
         ComputerModel(name: "Scubapro Aladin A2", family: .uwatecSmart, modelID: 0x28),
+        ComputerModel(name: "Scubapro Aladin Sport Matrix", family: .uwatecSmart, modelID: 0x17),
         ComputerModel(name: "Scubapro Luna 2.0", family: .uwatecSmart, modelID: 0x51),
         ComputerModel(name: "Scubapro Luna 2.0 AI", family: .uwatecSmart, modelID: 0x50),
         
@@ -91,7 +93,7 @@ import LibDCBridge
         ComputerModel(name: "Mares Icon HD", family: .maresIconHD, modelID: 0x14),
         ComputerModel(name: "Mares Puck Pro", family: .maresIconHD, modelID: 0x18),
         ComputerModel(name: "Mares Smart", family: .maresIconHD, modelID: 0x000010),
-        ComputerModel(name: "Mares Smart Apnea", family: .maresIconHD, modelID: 0x000010),
+        ComputerModel(name: "Mares Smart Apnea", family: .maresIconHD, modelID: 0x010010),
         ComputerModel(name: "Mares Quad", family: .maresIconHD, modelID: 0x29),
         ComputerModel(name: "Mares Quad Air", family: .maresIconHD, modelID: 0x23),
         ComputerModel(name: "Mares Quad Ci", family: .maresIconHD, modelID: 0x31),
@@ -124,7 +126,10 @@ import LibDCBridge
         ComputerModel(name: "Cressi Cartesio", family: .cressiGoa, modelID: 1),
         ComputerModel(name: "Cressi Leonardo 2.0", family: .cressiGoa, modelID: 3),
         ComputerModel(name: "Cressi Donatello", family: .cressiGoa, modelID: 4),
-        
+        ComputerModel(name: "Cressi Michelangelo", family: .cressiGoa, modelID: 5),
+        ComputerModel(name: "Cressi Neon", family: .cressiGoa, modelID: 9),
+        ComputerModel(name: "Cressi Nepto", family: .cressiGoa, modelID: 10),
+
         // Dive System / Ratio computers
         ComputerModel(name: "DiveSystem iDive Easy", family: .diveSystem, modelID: 0x09),
         ComputerModel(name: "DiveSystem iDive Free", family: .diveSystem, modelID: 0x08),
@@ -135,6 +140,7 @@ import LibDCBridge
         ComputerModel(name: "Ratio iDive Color Easy", family: .diveSystem, modelID: 0x52),
         ComputerModel(name: "Ratio iDive Color Free", family: .diveSystem, modelID: 0x50),
         ComputerModel(name: "Ratio iDive Color Deep", family: .diveSystem, modelID: 0x54),
+        ComputerModel(name: "Ratio iX3M 2021 GPS Easy", family: .diveSystem, modelID: 0x61),
 
         // Seac computers
         ComputerModel(name: "Seac Tablet", family: .seacScreen, modelID: 0x10),
@@ -531,7 +537,7 @@ import LibDCBridge
         ("Puck Air",     .maresIconHD, 0x2D),
         ("Puck",         .maresIconHD, 0x18),
         ("Smart Air",    .maresIconHD, 0x24),
-        ("Smart Apnea",  .maresIconHD, 0x000010),
+        ("Smart Apnea",  .maresIconHD, 0x010010),
         ("Smart",        .maresIconHD, 0x000010),
         ("Mares bluelink pro", .maresIconHD, 0x000010),
         // Seac - BLE advertisement names (dc_filter_seac matches "Tablet" prefix)
