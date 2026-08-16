@@ -30,7 +30,6 @@ import LibDCBridge
         // Shearwater computers
         ComputerModel(name: "Shearwater Peregrine", family: .shearwaterPetrel, modelID: 9),
         ComputerModel(name: "Shearwater Peregrine TX", family: .shearwaterPetrel, modelID: 13),
-        ComputerModel(name: "Shearwater Petrel", family: .shearwaterPetrel, modelID: 3),
         ComputerModel(name: "Shearwater Petrel 2", family: .shearwaterPetrel, modelID: 3),
         ComputerModel(name: "Shearwater Petrel 3", family: .shearwaterPetrel, modelID: 10),
         ComputerModel(name: "Shearwater Perdix", family: .shearwaterPetrel, modelID: 5),
@@ -57,6 +56,7 @@ import LibDCBridge
         ComputerModel(name: "Scubapro Aladin A1", family: .uwatecSmart, modelID: 0x25),
         ComputerModel(name: "Scubapro Aladin A2", family: .uwatecSmart, modelID: 0x28),
         ComputerModel(name: "Scubapro Aladin Sport Matrix", family: .uwatecSmart, modelID: 0x17),
+        ComputerModel(name: "Scubapro Aladin H Matrix", family: .uwatecSmart, modelID: 0x17),
         ComputerModel(name: "Scubapro Luna 2.0", family: .uwatecSmart, modelID: 0x51),
         ComputerModel(name: "Scubapro Luna 2.0 AI", family: .uwatecSmart, modelID: 0x50),
         
@@ -74,13 +74,17 @@ import LibDCBridge
         // Oceanic / Aeris / Sherwood / Hollis computers
         ComputerModel(name: "Oceanic Geo 4.0", family: .oceanicAtom2, modelID: 0x4653),
         ComputerModel(name: "Oceanic Veo 4.0", family: .oceanicAtom2, modelID: 0x4654),
+        ComputerModel(name: "Oceanic Pro Plus X", family: .oceanicAtom2, modelID: 0x4552),
         ComputerModel(name: "Oceanic Pro Plus 4", family: .oceanicAtom2, modelID: 0x4656),
         ComputerModel(name: "Oceanic Atom 3.1", family: .oceanicAtom2, modelID: 0x4456),
         ComputerModel(name: "Oceanic Geo Air", family: .oceanicAtom2, modelID: 0x474B),
         ComputerModel(name: "Aqualung i770R", family: .oceanicAtom2, modelID: 0x4651),
+        ComputerModel(name: "Aqualung i750TC", family: .oceanicAtom2, modelID: 0x455A),
         ComputerModel(name: "Aqualung i550C", family: .oceanicAtom2, modelID: 0x4652),
+        ComputerModel(name: "Aqualung i470TC", family: .oceanicAtom2, modelID: 0x4743),
         ComputerModel(name: "Aqualung i300C", family: .oceanicAtom2, modelID: 0x4648),
         ComputerModel(name: "Aqualung i200C", family: .oceanicAtom2, modelID: 0x4649),
+        ComputerModel(name: "Aqualung i200C", family: .oceanicAtom2, modelID: 0x4749),
         ComputerModel(name: "Sherwood Wisdom 3", family: .oceanicAtom2, modelID: 0x4458),
         ComputerModel(name: "Sherwood Sage", family: .oceanicAtom2, modelID: 0x4647),
         
@@ -92,6 +96,7 @@ import LibDCBridge
         // Mares computers
         ComputerModel(name: "Mares Icon HD", family: .maresIconHD, modelID: 0x14),
         ComputerModel(name: "Mares Puck Pro", family: .maresIconHD, modelID: 0x18),
+        ComputerModel(name: "Mares Puck Pro +", family: .maresIconHD , modelID: 0x18),
         ComputerModel(name: "Mares Smart", family: .maresIconHD, modelID: 0x000010),
         ComputerModel(name: "Mares Smart Apnea", family: .maresIconHD, modelID: 0x010010),
         ComputerModel(name: "Mares Quad", family: .maresIconHD, modelID: 0x29),
@@ -105,15 +110,21 @@ import LibDCBridge
         ComputerModel(name: "Mares Genius", family: .maresIconHD, modelID: 0x1C),
         ComputerModel(name: "Mares Puck 4", family: .maresIconHD, modelID: 0x35),
         
+        ComputerModel(name: "Mares Puck Lite", family: .maresIconHD , modelID: 0x35),
+        ComputerModel(name: "Mares Puck Pro EZ", family: .maresIconHD , modelID: 0x35),
+        ComputerModel(name: "Mares Puck Pro Ultra", family: .maresIconHD , modelID: 0x35),
         // DeepSix computers
         ComputerModel(name: "Deep Six Excursion", family: .deepsixExcursion, modelID: 0),
-        
+        ComputerModel(name: "Crest CR-4", family: .deepsixExcursion, modelID: 0),
+        ComputerModel(name: "Genesis Centauri", family: .deepsixExcursion, modelID: 0),
+        ComputerModel(name: "Scorpena Alpha", family: .deepsixExcursion, modelID: 0),
+
         // Deepblu computers
         ComputerModel(name: "Deepblu Cosmiq+", family: .deepbluCosmiq, modelID: 0),
         
         // Oceans computers
         ComputerModel(name: "Oceans S1", family: .oceansS1, modelID: 0),
-        
+
         // McLean computers
         ComputerModel(name: "McLean Extreme", family: .mcleanExtreme, modelID: 0),
         
@@ -134,13 +145,33 @@ import LibDCBridge
         ComputerModel(name: "DiveSystem iDive Easy", family: .diveSystem, modelID: 0x09),
         ComputerModel(name: "DiveSystem iDive Free", family: .diveSystem, modelID: 0x08),
         ComputerModel(name: "DiveSystem iDive Deep", family: .diveSystem, modelID: 0x0B),
-        ComputerModel(name: "Ratio iDive 2 Easy", family: .diveSystem, modelID: 0x82),
-        ComputerModel(name: "Ratio iDive 2 Free", family: .diveSystem, modelID: 0x80),
-        ComputerModel(name: "Ratio iDive 2 Deep", family: .diveSystem, modelID: 0x84),
-        ComputerModel(name: "Ratio iDive Color Easy", family: .diveSystem, modelID: 0x52),
-        ComputerModel(name: "Ratio iDive Color Free", family: .diveSystem, modelID: 0x50),
-        ComputerModel(name: "Ratio iDive Color Deep", family: .diveSystem, modelID: 0x54),
+
+        ComputerModel(name: "Ratio iX3M GPS Fancy", family: .diveSystem, modelID: 0x26),
+        ComputerModel(name: "Ratio iX3M 2021 GPS Fancy", family: .diveSystem, modelID: 0x60),
         ComputerModel(name: "Ratio iX3M 2021 GPS Easy", family: .diveSystem, modelID: 0x61),
+        ComputerModel(name: "Ratio iX3M 2021 GPS Pro ", family: .diveSystem, modelID: 0x62),
+        ComputerModel(name: "Ratio iX3M 2021 GPS Deep", family: .diveSystem, modelID: 0x63),
+        ComputerModel(name: "Ratio iX3M 2021 GPS Tech+", family: .diveSystem, modelID: 0x64),
+        ComputerModel(name: "Ratio iX3M 2021 GPS Reb", family: .diveSystem, modelID: 0x65),
+        ComputerModel(name: "Ratio iDive 2 Free", family: .diveSystem, modelID: 0x80),
+        ComputerModel(name: "Ratio iDive 2 Fancy", family: .diveSystem, modelID: 0x81),
+        ComputerModel(name: "Ratio iDive 2 Easy", family: .diveSystem, modelID: 0x82),
+        ComputerModel(name: "Ratio iDive 2 Pro", family: .diveSystem, modelID: 0x83),
+        ComputerModel(name: "Ratio iDive 2 Deep", family: .diveSystem, modelID: 0x84),
+        ComputerModel(name: "Ratio iDive 2 Tech", family: .diveSystem, modelID: 0x85),
+        ComputerModel(name: "Ratio iDive 2 Reb", family: .diveSystem, modelID: 0x86),
+        ComputerModel(name: "Ratio iX3M 2 GPS Gauge", family: .diveSystem, modelID: 0x90),
+        ComputerModel(name: "Ratio iX3M 2 GPS Easy", family: .diveSystem, modelID: 0x91),
+        ComputerModel(name: "Ratio iX3M 2 GPS Pro", family: .diveSystem, modelID: 0x92),
+        ComputerModel(name: "Ratio iX3M 2 GPS Deep", family: .diveSystem, modelID: 0x93),
+        ComputerModel(name: "Ratio iX3M 2 GPS Tech", family: .diveSystem, modelID: 0x94),
+        ComputerModel(name: "Ratio iX3M 2 GPS Reb", family: .diveSystem, modelID: 0x95),
+        ComputerModel(name: "Ratio ATOM", family: .diveSystem, modelID: 0x96),
+        ComputerModel(name: "Ratio iX3M 2 Gauge", family: .diveSystem, modelID: 0x100),
+        ComputerModel(name: "Ratio iX3M 2 Easy", family: .diveSystem, modelID: 0x101),
+        ComputerModel(name: "Ratio iX3M 2 Pro", family: .diveSystem, modelID: 0x102),
+        ComputerModel(name: "Ratio iX3M 2 Deep", family: .diveSystem, modelID: 0x103),
+        ComputerModel(name: "Ratio iX3M 2 Tech+", family: .diveSystem, modelID: 0x104),
 
         // Seac computers
         ComputerModel(name: "Seac Tablet", family: .seacScreen, modelID: 0x10),
@@ -154,6 +185,7 @@ import LibDCBridge
     public enum DeviceFamily: String, Codable, CaseIterable {
         case suuntoEonSteel
         case shearwaterPetrel
+        case shearwaterPredator
         case hwOstc3
         case uwatecSmart
         case oceanicAtom2
@@ -174,6 +206,7 @@ import LibDCBridge
             switch self {
             case .suuntoEonSteel: return DC_FAMILY_SUUNTO_EONSTEEL
             case .shearwaterPetrel: return DC_FAMILY_SHEARWATER_PETREL
+            case .shearwaterPredator: return DC_FAMILY_SHEARWATER_PREDATOR
             case .hwOstc3: return DC_FAMILY_HW_OSTC3
             case .uwatecSmart: return DC_FAMILY_UWATEC_SMART
             case .oceanicAtom2: return DC_FAMILY_OCEANIC_ATOM2
@@ -196,6 +229,7 @@ import LibDCBridge
             switch dcFamily {
             case DC_FAMILY_SUUNTO_EONSTEEL: self = .suuntoEonSteel
             case DC_FAMILY_SHEARWATER_PETREL: self = .shearwaterPetrel
+            case DC_FAMILY_SHEARWATER_PREDATOR: self = .shearwaterPredator
             case DC_FAMILY_HW_OSTC3: self = .hwOstc3
             case DC_FAMILY_UWATEC_SMART: self = .uwatecSmart
             case DC_FAMILY_OCEANIC_ATOM2: self = .oceanicAtom2
