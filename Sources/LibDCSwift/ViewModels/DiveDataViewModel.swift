@@ -18,7 +18,11 @@ public class DiveDataViewModel: ObservableObject {
     @Published public var status: String = ""
     @Published public var progress: DownloadProgress = .notStarted
     @Published public var hasNewDives: Bool = false
-    
+    /// True when at least one dive was downloaded but the sync ended early due to a
+    /// device-side protocol error (e.g. a corrupt dive slot). The UI can use this flag
+    /// to surface a "partial sync" note in the import confirmation alert.
+    @Published public var isPartialSync: Bool = false
+
     /// Key format: "fingerprint_{deviceType}_{serial}"
     private let fingerprintKeyPrefix = "fingerprint_"
     

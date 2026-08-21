@@ -408,10 +408,24 @@ public class DiveLogRetriever {
                             downloadSucceeded = true
                             shouldSaveFingerprint = false  // Don't update fingerprint if no new dives
                         } else if context.hasNewDives {
-                            // We got some dives but then hit protocol error - partial download
-                            logWarning("Protocol error after downloading \(context.logCount - 1) dive(s) - check libdc logs above for protocol details")
-                            downloadSucceeded = false
-                            shouldSaveFingerprint = false  // Don't save partial download fingerprint
+                            // Partial download: device returned a protocol error on an older dive slot
+                            // (e.g. corrupt/empty profile — common on old-firmware Mares devices).
+                            // Keep the dives already downloaded rather than discarding the batch.
+                            // Enumeration is newest-first, so lastFingerprint holds the newest
+                            // successfully-downloaded dive — saving it advances the sync watermark
+                            // past everything we got and prevents duplicate re-downloads next sync.
+                            // Note: if a corrupt slot is not the newest slot, dives older than the
+                            // corrupt slot cannot be reached until the user forces a full re-download
+                            // (useFingerprint=false), since the watermark stops enumeration at the
+                            // last successfully-downloaded newest dive.
+                            // Gate fingerprint save on useFingerprint: when the user forced a full
+                            // re-download we must not write a watermark they opted out of, or
+                            // subsequent normal syncs would silently skip any dives past the
+                            // corrupt slot that the forced download also failed to reach.
+                            logWarning("Partial sync: \(context.logCount - 1) dive(s) downloaded before protocol error — keeping downloaded dives")
+                            downloadSucceeded = true
+                            shouldSaveFingerprint = context.useFingerprint
+                            viewModel.isPartialSync = true
                         } else if context.storedFingerprint != nil {
                             // Protocol error with fingerprint but no dives downloaded
                             downloadSucceeded = true
