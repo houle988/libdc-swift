@@ -142,10 +142,6 @@ import LibDCBridge
         ComputerModel(name: "Cressi Nepto", family: .cressiGoa, modelID: 10),
 
         // Dive System / Ratio computers
-        ComputerModel(name: "DiveSystem iDive Easy", family: .diveSystem, modelID: 0x09),
-        ComputerModel(name: "DiveSystem iDive Free", family: .diveSystem, modelID: 0x08),
-        ComputerModel(name: "DiveSystem iDive Deep", family: .diveSystem, modelID: 0x0B),
-
         ComputerModel(name: "Ratio iX3M GPS Fancy", family: .diveSystem, modelID: 0x26),
         ComputerModel(name: "Ratio iX3M 2021 GPS Fancy", family: .diveSystem, modelID: 0x60),
         ComputerModel(name: "Ratio iX3M 2021 GPS Easy", family: .diveSystem, modelID: 0x61),
