@@ -1,14 +1,14 @@
 # Vendored libdivecomputer
 
-This directory contains a snapshot of [libdivecomputer](https://github.com/houle988/libdivecomputer)
+This directory contains a snapshot of [libdivecomputer](https://github.com/libdivecomputer/libdivecomputer)
 compiled as a SwiftPM target (autotools is not available in SwiftPM, so the library is vendored directly).
 
 ## Current snapshot
 
 | Field | Value |
 |---|---|
-| Upstream commit | `8e564eb5cf9fb4318af3d540895abb916e1809b0` |
-| Upstream date | 2026-07-13 |
+| Upstream commit | `9b1cd206923857060eae4970c543f7cc64ecbd6f` |
+| Upstream date | 2026-08-31 |
 | Version | 0.10.0 |
 
 ## version.h
@@ -35,7 +35,7 @@ compiled as a SwiftPM target (autotools is not available in SwiftPM, so the libr
 
 1. Clone the upstream repo:
    ```
-   git clone --depth=1 https://github.com/houle988/libdivecomputer /tmp/libdivecomputer-upstream
+   git clone --depth=1 https://github.com/libdivecomputer/libdivecomputer /tmp/libdivecomputer-upstream
    ```
 2. Compare file lists (`src/` and `include/libdivecomputer/`) for new or removed files.
 3. Copy changed files, skipping the Windows-only ones listed above.

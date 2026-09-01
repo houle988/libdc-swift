@@ -479,6 +479,7 @@ public class DiveLogRetriever {
                     #if os(iOS)
                     endBackgroundTask()
                     #endif
+                    currentContext = nil
                 }
                 
                 currentContext = context
