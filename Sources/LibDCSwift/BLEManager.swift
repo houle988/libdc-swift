@@ -188,7 +188,7 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
     
     @objc(discoverServices)
     public func discoverServices() -> Bool {
-        guard let peripheral = self.peripheral else {
+        guard let peripheral = queue.sync(execute: { self.peripheral }) else {
             logError("No peripheral available for service discovery")
             return false
         }
@@ -212,29 +212,34 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         // main thread stays free to process callbacks when this is called
         // from a background thread.
         let timeout = Date(timeIntervalSinceNow: 5.0)
-        while writeCharacteristic == nil || notifyCharacteristic == nil {
+        while queue.sync(execute: { writeCharacteristic == nil || notifyCharacteristic == nil }) {
             if Date() > timeout {
                 logError("Timeout waiting for service discovery (5s)")
                 if Logger.shared.isDebugMode {
-                    logDebug("[BLE DISCOVER] writeChar=\(writeCharacteristic != nil), notifyChar=\(notifyCharacteristic != nil)")
+                    let (w, n) = queue.sync { (writeCharacteristic != nil, notifyCharacteristic != nil) }
+                    logDebug("[BLE DISCOVER] writeChar=\(w), notifyChar=\(n)")
                 }
                 return false
             }
             Thread.sleep(forTimeInterval: 0.05)
         }
         
+        let (writeChar, notifyChar) = queue.sync { (writeCharacteristic, notifyCharacteristic) }
         if Logger.shared.isDebugMode {
             let elapsed = Date().timeIntervalSince(startTime)
-            logDebug("[BLE DISCOVER] Completed in \(String(format: "%.2f", elapsed))s - writeChar: \(writeCharacteristic?.uuid.uuidString ?? "nil"), notifyChar: \(notifyCharacteristic?.uuid.uuidString ?? "nil")")
+            logDebug("[BLE DISCOVER] Completed in \(String(format: "%.2f", elapsed))s - writeChar: \(writeChar?.uuid.uuidString ?? "nil"), notifyChar: \(notifyChar?.uuid.uuidString ?? "nil")")
         }
-        
-        return writeCharacteristic != nil && notifyCharacteristic != nil
+
+        return writeChar != nil && notifyChar != nil
     }
     
     @objc(enableNotifications)
     public func enableNotifications() -> Bool {
-        guard let notifyCharacteristic = self.notifyCharacteristic,
-              let peripheral = self.peripheral else {
+        let snapshot: (CBCharacteristic, CBPeripheral)? = queue.sync {
+            guard let n = self.notifyCharacteristic, let p = self.peripheral else { return nil }
+            return (n, p)
+        }
+        guard let (notifyCharacteristic, peripheral) = snapshot else {
             logError("Missing characteristic or peripheral for notifications")
             return false
         }
@@ -259,6 +264,16 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         // (entering the passkey shown by iOS on the dive computer).
         let timeout = Date(timeIntervalSinceNow: 30.0)
         while !notifyCharacteristic.isNotifying {
+            // Fast-fail if the link drops mid-wait (device unplugged, out of
+            // range, or close() ran). Without this the loop would burn the full
+            // 30 s timeout on a connection that can never succeed, showing the
+            // user an apparent hang. The 30 s timeout is preserved for the
+            // legitimate case where the peripheral is still connected but the
+            // user is entering a first-time pairing passkey.
+            if peripheral.state != .connected {
+                logError("Peripheral disconnected while waiting for notifications: \(peripheral.state.rawValue)")
+                return false
+            }
             if Date() > timeout {
                 logError("Timeout waiting for notifications to enable (30s)")
                 return false
@@ -282,7 +297,7 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
     /// during the READMEMORY command.  Returning an empty string causes
     /// the dive computer to answer with NAK (0xA5) instead of ACK + data.
     @objc public func getDeviceName() -> String {
-        return peripheral?.name ?? ""
+        return queue.sync { peripheral?.name } ?? ""
     }
 
     // MARK: - Data Handling
@@ -295,8 +310,14 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
     /// Returns 0 on success, 1 on a transient with-response confirmation timeout
     /// (libdivecomputer may retry on Oceanic/Aqualung), 2 on hard failure.
     @objc public func write(_ data: Data!) -> Int {
-        guard let peripheral = self.peripheral,
-              let characteristic = self.writeCharacteristic else { return 2 }
+        // peripheral/writeCharacteristic are mutated on the main queue by CoreBluetooth
+        // delegate callbacks; this method runs on libdivecomputer's background I/O thread.
+        // Snapshot both under `queue` so we never read a torn/stale reference mid-teardown.
+        let snapshot: (CBPeripheral, CBCharacteristic)? = queue.sync {
+            guard let p = self.peripheral, let c = self.writeCharacteristic else { return nil }
+            return (p, c)
+        }
+        guard let (peripheral, characteristic) = snapshot else { return 2 }
 
         Logger.shared.logPacket(direction: .outbound, data: data, characteristicUUID: characteristic.uuid.uuidString)
 
@@ -545,13 +566,21 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
             }
         }
         
-        if let peripheral = self.peripheral {
-            self.writeCharacteristic = nil
-            self.notifyCharacteristic = nil
-            DispatchQueue.main.async {
-                self.peripheral = nil
+        if let peripheral = queue.sync(execute: { self.peripheral }) {
+            queue.sync {
+                self.writeCharacteristic = nil
+                self.notifyCharacteristic = nil
             }
-            centralManager.cancelPeripheralConnection(peripheral)
+            // peripheral is @Published — keep the assignment on the main queue for
+            // Combine/SwiftUI, but serialize the store under `queue` so background
+            // readers (write/discoverServices) never observe a torn reference.
+            // cancelPeripheralConnection must also run on main — CBCentralManager
+            // was created with queue: nil (main queue) and its methods must be
+            // called on that queue.
+            DispatchQueue.main.async {
+                self.queue.sync { self.peripheral = nil }
+                self.centralManager.cancelPeripheralConnection(peripheral)
+            }
         }
 
         // Reset first-packet flag here (after teardown) so the next open
@@ -607,14 +636,23 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         }
         
         if Thread.isMainThread {
-            self.peripheral = peripheral
+            self.queue.sync { self.peripheral = peripheral }
+            peripheral.delegate = self
+            centralManager.connect(peripheral, options: nil)
         } else {
+            // peripheral store, delegate assignment, and connect must all run on
+            // main — CBCentralManager was created with queue: nil (main queue).
             DispatchQueue.main.async { [weak self] in
-                self?.peripheral = peripheral
+                guard let self else { return }
+                self.queue.sync { self.peripheral = peripheral }
+                peripheral.delegate = self
+                // Re-verify on main — the .disconnected wait ran on background; mirrors the existing "proceeding anyway" guard.
+                if peripheral.state != .disconnected, Logger.shared.isDebugMode {
+                    logWarning("[BLE CONNECT] State changed to \(peripheral.state.rawValue) between wait and connect() — proceeding anyway")
+                }
+                self.centralManager.connect(peripheral, options: nil)
             }
         }
-        peripheral.delegate = self
-        centralManager.connect(peripheral, options: nil)
         return true  // Return immediately, connection status will be handled by delegate
     }
     
@@ -676,18 +714,6 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
     private var currentBackgroundTask: UIBackgroundTaskIdentifier?
     #endif
 
-    public func systemDisconnect(_ peripheral: CBPeripheral) {
-        logInfo("Performing system-level disconnect for \(peripheral.name ?? "Unknown Device")")
-        DispatchQueue.main.async {
-            self.isPeripheralReady = false
-            self.connectedDevice = nil
-            self.writeCharacteristic = nil
-            self.notifyCharacteristic = nil
-            self.peripheral = nil
-        }
-        centralManager.cancelPeripheralConnection(peripheral)
-    }
-    
     public func clearDiscoveredPeripherals() {
         DispatchQueue.main.async {
             self.discoveredPeripherals.removeAll()
@@ -741,6 +767,14 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
     }
     
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        // Guard against a spurious connect callback that fires after close() has already
+        // initiated teardown (e.g. connect() main.async block + immediate cancelPeripheralConnection
+        // race). Without this, isPeripheralReady would be set to true mid-teardown and the C
+        // bridge's polling loop would proceed into discoverServices() on a closing link.
+        guard !isDisconnecting else {
+            logWarning("[BLE CONNECT] Ignoring didConnect — teardown already in progress (isDisconnecting=true)")
+            return
+        }
         logInfo("Successfully connected to \(peripheral.name ?? "Unknown Device")")
         peripheral.delegate = self
         // Set isPeripheralReady synchronously so that callers busy-waiting on
@@ -836,9 +870,11 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
         // service leaves writeCharacteristic/notifyCharacteristic pointing
         // at dead characteristics from the previous peripheral.
         preferredService = nil
-        writeCharacteristic = nil
-        notifyCharacteristic = nil
-        queue.sync { characteristicsByUUID.removeAll() }
+        queue.sync {
+            writeCharacteristic = nil
+            notifyCharacteristic = nil
+            characteristicsByUUID.removeAll()
+        }
 
         // Prefer vendor-specific service over generic Nordic UART.
         // Cressi advertises both Nordic UART (…CA9E) and its own service (…10B8);
@@ -910,28 +946,34 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
             }
         }
 
-        for characteristic in characteristics {
-            if writeCharacteristic == nil &&
-               characteristic.properties.contains(.writeWithoutResponse) {
-                writeCharacteristic = characteristic
+        // Serialize characteristic selection under `queue`: writeCharacteristic and
+        // notifyCharacteristic are read on libdivecomputer's background I/O thread
+        // (write / discoverServices / enableNotifications), so assignments must share
+        // the same lock to prevent torn reads on the background side.
+        queue.sync {
+            for characteristic in characteristics {
+                if writeCharacteristic == nil &&
+                   characteristic.properties.contains(.writeWithoutResponse) {
+                    writeCharacteristic = characteristic
+                }
+                if notifyCharacteristic == nil &&
+                   characteristic.properties.contains(.notify) {
+                    notifyCharacteristic = characteristic
+                    // Note: Do NOT call setNotifyValue here — enableNotifications()
+                    // is called separately by connectToBLEDevice (BLEBridge.m) after
+                    // service discovery completes. Subscribing twice can confuse some
+                    // BLE stacks (e.g. Shearwater).
+                }
             }
-            if notifyCharacteristic == nil &&
-               characteristic.properties.contains(.notify) {
-                notifyCharacteristic = characteristic
-                // Note: Do NOT call setNotifyValue here — enableNotifications()
-                // is called separately by connectToBLEDevice (BLEBridge.m) after
-                // service discovery completes. Subscribing twice can confuse some
-                // BLE stacks (e.g. Shearwater).
-            }
-        }
-        for characteristic in characteristics {
-            if writeCharacteristic == nil &&
-               characteristic.properties.contains(.write) {
-                writeCharacteristic = characteristic
-            }
-            if notifyCharacteristic == nil &&
-               characteristic.properties.contains(.indicate) {
-                notifyCharacteristic = characteristic
+            for characteristic in characteristics {
+                if writeCharacteristic == nil &&
+                   characteristic.properties.contains(.write) {
+                    writeCharacteristic = characteristic
+                }
+                if notifyCharacteristic == nil &&
+                   characteristic.properties.contains(.indicate) {
+                    notifyCharacteristic = characteristic
+                }
             }
         }
 
@@ -1046,7 +1088,7 @@ public class CoreBluetoothManager: NSObject, CoreBluetoothManagerProtocol, Obser
     @objc(readCharacteristicByUUID:timeout:)
     public func readCharacteristic(byUUID uuidString: String, timeout: Double) -> Data? {
         let lower = uuidString.lowercased()
-        guard let peripheral = self.peripheral else {
+        guard let peripheral = queue.sync(execute: { self.peripheral }) else {
             logError("[BLE IOCTL] readCharacteristic: no peripheral connected")
             return nil
         }
