@@ -100,12 +100,6 @@ public class DiveLogRetriever {
         
         let fingerprintData = Data(bytes: fingerprint, count: Int(fsize))
 
-        // Capture the FIRST dive's fingerprint (most recent dive on the device)
-        // This is what we'll compare against on the next download
-        if context.logCount == 1 {
-            context.lastFingerprint = fingerprintData
-        }
-        
         // Check if this dive matches our stored fingerprint (already downloaded)
         if context.useFingerprint, let storedFingerprint = context.storedFingerprint {
             if storedFingerprint == fingerprintData {
@@ -114,16 +108,16 @@ public class DiveLogRetriever {
                 return 0  // Stop enumeration - we've reached already-downloaded dives
             }
         }
-        
+
         // 4. Parse & Store Dive
         var familyToUse: dc_family_t
         var modelToUse: UInt32
-        
+
         // PRIORITY ORDER FOR MODEL SELECTION:
         // 1. Hardware Detection (Most reliable if available)
         // 2. Stored/Forced Configuration (What the user selected)
         // 3. Name-based Detection (Fallback)
-        
+
         if context.detectedModel != 0 {
             familyToUse = context.detectedFamily
             modelToUse = context.detectedModel
@@ -158,6 +152,14 @@ public class DiveLogRetriever {
             // Attach the fingerprint so callers can persist it without touching UserDefaults
             diveData.fingerprint = fingerprintData
 
+            // Capture watermark only on the first successfully-parsed dive (newest dive on
+            // device, since enumeration is newest-first). Guarding on successful parse
+            // ensures a slot that fails to parse never advances the watermark past a dive
+            // that was never imported.
+            if context.logCount == 1 {
+                context.lastFingerprint = fingerprintData
+            }
+
             let countSnapshot = context.logCount
             DispatchQueue.main.async {
                 context.viewModel.appendDives([diveData])
@@ -166,10 +168,10 @@ public class DiveLogRetriever {
 
             context.hasNewDives = true
             context.logCount += 1
-            return 1  
+            return 1
         } catch {
             logError("❌ Failed to parse dive #\(context.logCount): \(error)")
-            return 1 
+            return 1
         }
     }
     
@@ -479,6 +481,7 @@ public class DiveLogRetriever {
                     #if os(iOS)
                     endBackgroundTask()
                     #endif
+                    currentContext = nil
                 }
                 
                 currentContext = context

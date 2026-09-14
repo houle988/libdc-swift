@@ -500,6 +500,9 @@ public class GenericParser {
             datetime: date,
             maxDepth: wrapper.data.maxDepth,
             avgDepth: wrapper.calculateAverageDepth(),
+            // Intentionally uses maxTime (last DC_SAMPLE_TIME) rather than DC_FIELD_DIVETIME.
+            // maxTime is consistent across all device families and matches the profiled underwater
+            // duration used by all derived calculations (SAC, avg depth, surface intervals).
             divetime: wrapper.data.maxTime,
             temperature: wrapper.data.tempMinimum,
             profile: wrapper.data.profile,
