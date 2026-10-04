@@ -244,7 +244,12 @@ public struct DiveData: Identifiable {
     // Environmental data
     public var salinity: Double?
     public var atmospheric: Double?
+    /// Surface temperature: the computer's own value (DC_FIELD_TEMPERATURE_SURFACE) when it
+    /// reports one, otherwise the first profile sample's temperature — usually water, not air.
     public var surfaceTemperature: Double?
+    /// The surface temperature only when the computer reports it (DC_FIELD_TEMPERATURE_SURFACE);
+    /// nil when `surfaceTemperature` is the first-sample fallback.
+    public var measuredSurfaceTemperature: Double?
     public var minTemperature: Double?
     public var maxTemperature: Double?
     
@@ -415,6 +420,7 @@ public struct DiveData: Identifiable {
         salinity: Double?,
         atmospheric: Double?,
         surfaceTemperature: Double?,
+        measuredSurfaceTemperature: Double? = nil,
         minTemperature: Double?,
         maxTemperature: Double?,
         tankCount: Int?,
@@ -446,6 +452,7 @@ public struct DiveData: Identifiable {
         self.salinity = salinity
         self.atmospheric = atmospheric
         self.surfaceTemperature = surfaceTemperature
+        self.measuredSurfaceTemperature = measuredSurfaceTemperature
         self.minTemperature = minTemperature
         self.maxTemperature = maxTemperature
         self.tankCount = tankCount
