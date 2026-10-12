@@ -25,17 +25,23 @@ public class DiveLogRetriever {
         /// When false, skip fingerprint comparison entirely so a forced full
         /// re-download isn't cut short by an early-return fingerprint match.
         let useFingerprint: Bool
+        /// Import cutoff: enumeration stops at the first dive recorded before this date, so
+        /// older dives are never transferred. Dives arrive newest-first, so every dive after
+        /// that one is older too.
+        let stopBefore: Date?
+        var cutoffReached: Bool = false  // Track if we stopped due to the import cutoff
 
         var detectedFamily: dc_family_t = DC_FAMILY_NULL
         var detectedModel: UInt32 = 0
 
-        init(viewModel: DiveDataViewModel, deviceName: String, deviceUUID: String, storedFingerprint: Data?, bluetoothManager: CoreBluetoothManager, useFingerprint: Bool = true) {
+        init(viewModel: DiveDataViewModel, deviceName: String, deviceUUID: String, storedFingerprint: Data?, bluetoothManager: CoreBluetoothManager, useFingerprint: Bool = true, stopBefore: Date? = nil) {
             self.viewModel = viewModel
             self.deviceName = deviceName
             self.deviceUUID = deviceUUID
             self.storedFingerprint = storedFingerprint
             self.bluetoothManager = bluetoothManager
             self.useFingerprint = useFingerprint
+            self.stopBefore = stopBefore
         }
     }
 
@@ -146,6 +152,20 @@ public class DiveLogRetriever {
                 dataSize: Int(size)
             )
 
+            // Stop at the import cutoff. Enumeration is newest-first, so this dive and every
+            // remaining one were recorded before the cutoff: returning 0 ends the download
+            // without transferring them. If no dive was kept yet, this dive is the newest on the
+            // device — keep its fingerprint as the watermark so the next sync is incremental
+            // instead of downloading back to the cutoff again.
+            if let stopBefore = context.stopBefore, diveData.datetime < stopBefore {
+                logInfo("⏹️ Reached import cutoff - stopping download (\(context.logCount - 1) dive(s) downloaded)")
+                context.cutoffReached = true
+                if context.logCount == 1 {
+                    context.lastFingerprint = fingerprintData
+                }
+                return 0
+            }
+
             // Preserve the raw binary data from the dive computer
             diveData.rawData = Data(bytes: data, count: Int(size))
 
@@ -244,13 +264,19 @@ public class DiveLogRetriever {
             bluetoothManager: CoreBluetoothManager,
             syncClock: Bool = false,
             useFingerprint: Bool = true,
+            stopBefore: Date? = nil,
             onProgress: ((Int, Int) -> Void)? = nil,
             completion: @escaping (Bool) -> Void
         ) {
             let retrievalQueue = DispatchQueue(label: "com.libdcswift.retrieval", qos: .userInitiated)
             
             retrievalQueue.async {
-                DispatchQueue.main.async { viewModel.resetProgress() }
+                DispatchQueue.main.async {
+                    viewModel.resetProgress()
+                    // Only set on success, so clear it here: a reused view model must not
+                    // carry the previous download's cutoff stop into a failed one.
+                    viewModel.stoppedAtCutoff = false
+                }
                 
                 guard let dcDevice = devicePtr.pointee.device else {
                     DispatchQueue.main.async {
@@ -286,7 +312,8 @@ public class DiveLogRetriever {
                     deviceUUID: device.identifier.uuidString,
                     storedFingerprint: storedFingerprint,
                     bluetoothManager: bluetoothManager,
-                    useFingerprint: useFingerprint
+                    useFingerprint: useFingerprint,
+                    stopBefore: stopBefore
                 )
                 context.devicePtr = devicePtr
                 
@@ -362,7 +389,7 @@ public class DiveLogRetriever {
                 // Also runs on the fingerprint-match path (DC_STATUS_PROTOCOL +
                 // fingerprintMatched) so routine "no new dives" syncs still update the clock.
                 let clockSyncAllowed = enumStatus == DC_STATUS_SUCCESS
-                    || (enumStatus == DC_STATUS_PROTOCOL && context.fingerprintMatched)
+                    || (enumStatus == DC_STATUS_PROTOCOL && (context.fingerprintMatched || context.cutoffReached))
                 if syncClock && clockSyncAllowed {
                     let now = Date()
                     let comps = Calendar(identifier: .gregorian).dateComponents(
@@ -401,11 +428,19 @@ public class DiveLogRetriever {
                     case DC_STATUS_SUCCESS:
                         // Normal successful completion
                         downloadSucceeded = true
+                        // A cutoff stop with no dive kept still saves the stopping dive as the
+                        // watermark (fingerprinting on only — a forced full re-download must not
+                        // write one it opted out of).
                         shouldSaveFingerprint = context.hasNewDives
-                        
+                            || (context.cutoffReached && context.useFingerprint)
+
                     case DC_STATUS_PROTOCOL:
                         // Protocol error - could be genuine error OR early termination from callback
-                        if context.fingerprintMatched {
+                        if context.cutoffReached {
+                            // We stopped because we reached the import cutoff
+                            downloadSucceeded = true
+                            shouldSaveFingerprint = context.hasNewDives || context.useFingerprint
+                        } else if context.fingerprintMatched {
                             // We stopped because we found matching fingerprint (no new dives)
                             downloadSucceeded = true
                             shouldSaveFingerprint = false  // Don't update fingerprint if no new dives
@@ -451,6 +486,7 @@ public class DiveLogRetriever {
                         completion(false)
                     } else {
                         // Download completed successfully
+                        viewModel.stoppedAtCutoff = context.cutoffReached
                         if shouldSaveFingerprint, let lastFP = context.lastFingerprint, let serial = context.deviceSerial {
                             // Use stored device configuration (user-selected) for consistent fingerprint storage
                             let deviceType: String
