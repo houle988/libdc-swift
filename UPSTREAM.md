@@ -38,6 +38,7 @@ Upstream has three bugs that are already fixed in our fork:
 - **Timer on retrieval queue**: upstream uses `Timer.scheduledTimer`, which never fires on a GCD thread without a RunLoop. Our version uses `DispatchSourceTimer`.
 - **Sentinel fingerprint**: upstream returns a hardcoded sentinel on failure. Our version returns `nil`.
 - **Clock sync**: upstream has no `syncClock` feature. Our version does.
+- **Import cutoff**: upstream has no `stopBefore:` parameter on `retrieveDiveLogs`. Ours ends enumeration (callback returns 0) at the first dive recorded before the cutoff, so older dives are never transferred; when no dive was kept, the stopping dive's fingerprint is saved as the watermark (fingerprinting on only), so the next sync is incremental. `DiveDataViewModel.stoppedAtCutoff` reports the stop to the UI. Relies on libdivecomputer's newest-first enumeration, the same contract as the fingerprint stop.
 
 ### `GenericParser.swift` + `Models/SampleData.swift`
 Our version includes features and fixes upstream is missing entirely:

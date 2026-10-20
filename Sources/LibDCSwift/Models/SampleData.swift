@@ -15,6 +15,9 @@ public struct SampleData {
     
     // Temperature tracking
     var tempSurface: Double = Double.infinity  // Surface temperature
+    /// Surface temperature reported by the computer itself (DC_FIELD_TEMPERATURE_SURFACE), unlike
+    /// `tempSurface`, which falls back to the first profile sample's temperature.
+    var tempSurfaceMeasured: Double = Double.infinity
     var tempMinimum: Double = Double.infinity  // Minimum temperature
     var tempMaximum: Double = -Double.infinity // Maximum temperature
     

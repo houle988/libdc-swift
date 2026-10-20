@@ -22,6 +22,10 @@ public class DiveDataViewModel: ObservableObject {
     /// device-side protocol error (e.g. a corrupt dive slot). The UI can use this flag
     /// to surface a "partial sync" note in the import confirmation alert.
     @Published public var isPartialSync: Bool = false
+    /// True when the download ended at the first dive recorded before the import cutoff
+    /// (`retrieveDiveLogs(stopBefore:)`), so older dives were never transferred. The UI can
+    /// use this to tell the user why the sync ended there.
+    @Published public var stoppedAtCutoff: Bool = false
 
     /// Key format: "fingerprint_{deviceType}_{serial}"
     private let fingerprintKeyPrefix = "fingerprint_"

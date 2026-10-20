@@ -479,6 +479,7 @@ public class GenericParser {
 
         if let tempSurf: Double = getField(parser, type: DC_FIELD_TEMPERATURE_SURFACE) {
             wrapper.data.tempSurface = tempSurf
+            wrapper.data.tempSurfaceMeasured = tempSurf
         }
 
         // Create date from components
@@ -513,6 +514,7 @@ public class GenericParser {
             salinity: wrapper.data.salinity,
             atmospheric: wrapper.data.atmospheric,
             surfaceTemperature: wrapper.data.tempSurface.isFinite ? wrapper.data.tempSurface : nil,
+            measuredSurfaceTemperature: wrapper.data.tempSurfaceMeasured.isFinite ? wrapper.data.tempSurfaceMeasured : nil,
             minTemperature: wrapper.data.tempMinimum.isFinite ? wrapper.data.tempMinimum : nil,
             maxTemperature: wrapper.data.tempMaximum.isFinite ? wrapper.data.tempMaximum : nil,
             tankCount: wrapper.data.tanks.count,
