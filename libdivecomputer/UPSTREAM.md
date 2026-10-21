@@ -7,8 +7,8 @@ compiled as a SwiftPM target (autotools is not available in SwiftPM, so the libr
 
 | Field | Value |
 |---|---|
-| Upstream commit | `9b1cd206923857060eae4970c543f7cc64ecbd6f` |
-| Upstream date | 2026-08-31 |
+| Upstream commit | `9e6c3c8328562b9b82abce7b476d86e79046d446` |
+| Upstream date | 2026-09-11 |
 | Version | 0.10.0 |
 
 ## version.h

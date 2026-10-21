@@ -140,6 +140,7 @@ import LibDCBridge
         ComputerModel(name: "Cressi Leonardo 2.0", family: .cressiGoa, modelID: 3),
         ComputerModel(name: "Cressi Donatello", family: .cressiGoa, modelID: 4),
         ComputerModel(name: "Cressi Michelangelo", family: .cressiGoa, modelID: 5),
+        ComputerModel(name: "Cressi Raffaello", family: .cressiGoa, modelID: 6),
         ComputerModel(name: "Cressi Neon", family: .cressiGoa, modelID: 9),
         ComputerModel(name: "Cressi Nepto", family: .cressiGoa, modelID: 10),
 
@@ -479,6 +480,9 @@ import LibDCBridge
         if let result = resolveOceanicBLEName(name) {
             return result
         }
+        if let result = resolveCressiBLEName(name) {
+            return result
+        }
         if let result = resolveByBLENamePrefix(name) {
             return result
         }
@@ -547,7 +551,28 @@ import LibDCBridge
         
         return nil
     }
-    
+
+    /// Resolves Cressi Goa-family BLE names to the correct model.
+    /// libdivecomputer's `dc_match_cressi` defines them as the model number in hex (no leading
+    /// zeros), an underscore, then hex digits only — e.g. "6_1A2B" → model 6 → Cressi Raffaello.
+    /// Without this, the C bridge's filter fallback accepts every listed Cressi model for each
+    /// Cressi descriptor and returns the first one (Cartesio) for all of them.
+    private static func resolveCressiBLEName(_ name: String) -> (family: DeviceFamily, model: UInt32)? {
+        guard let separator = name.firstIndex(of: "_") else { return nil }
+        let modelPart = name[..<separator].lowercased()
+        let serialPart = name[name.index(after: separator)...]
+
+        // Same rules as dc_match_prefix_with_hex: case-insensitive "%x_" prefix, ASCII hex after it.
+        guard let modelID = UInt32(modelPart, radix: 16),
+              String(modelID, radix: 16) == modelPart,
+              serialPart.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
+
+        guard supportedModels.contains(where: { $0.family == .cressiGoa && $0.modelID == modelID }) else {
+            return nil
+        }
+        return (family: .cressiGoa, model: modelID)
+    }
+
     /// BLE name prefix mapping for brands where the shared filter causes misidentification.
     /// Ordered most-specific-first within each brand.
     private static let bleNamePrefixes: [(prefix: String, family: DeviceFamily, modelID: UInt32)] = [

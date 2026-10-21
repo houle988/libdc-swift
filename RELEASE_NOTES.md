@@ -1,5 +1,37 @@
 # Release Notes
 
+## Unreleased — 2026-10-21
+
+libdivecomputer updated to upstream `9e6c3c8` (2026-09-11). Maximum and average depth now come from the dive computer's own record when it provides them, instead of being calculated from the downloaded profile; the profile values are still used when a computer does not report them.
+
+### New devices supported
+- **Cressi Raffaello** (model 6) — new libdivecomputer descriptor and BLE filter entry, plus a `ComputerModel` entry in `DeviceConfiguration.supportedModels`
+
+### Dive data improvements
+- **Computer-reported maximum depth** (`DC_FIELD_MAXDEPTH`) — `DiveData.maxDepth` uses the depth the computer recorded, which catches peaks that fall between logged samples. Every supported family except Shearwater, which keeps the deepest profile sample: its non-PNF firmware records the maximum in whole metres/feet, coarser than its 0.1 m samples, and the wrapper cannot tell PNF from non-PNF
+- **Computer-reported average depth** (`DC_FIELD_AVGDEPTH`) — `DiveData.avgDepth` uses the computer's average when it records one: Mares (iconHD, Genius, Horizon layouts), Cressi Goa family (scuba, nitrox and gauge modes), Heinrichs Weikamp OSTC (log version 0x21 and later), Divesoft (header V2), Deep Six (layout v1), McLean Extreme, Seac Screen, Oceanic i330R / i330R C / DSX
+- Both fall back to the profile value (deepest sample, time-weighted average) when the computer reports nothing, or a non-finite or non-positive value
+- **Oceanic DSX** (upstream) — minimum and maximum temperature, Bühlmann GF deco model, time-to-surface on deco samples, ppO₂ samples (`DC_SENSOR_NONE`) and CNS samples
+- **Oceanic i770R** (upstream) — dive time, minimum temperature and salinity (fresh/salt)
+- **Mares average depth** field (upstream) for the iconHD, Genius and Horizon layouts
+
+### Bug fixes
+- **Fixed Cressi model identification** — Cressi computers advertise BLE names of the form `<hex model>_<hex>` (e.g. `6_1A2B`); the C bridge resolved every Cressi Goa-family computer to the first descriptor, Cressi Cartesio. The new `resolveCressiBLEName` mirrors libdivecomputer's `dc_match_cressi` exactly (case-insensitive, no leading zeros, ASCII hex only, listed models only)
+- **Fixed repeated full downloads on the Cressi Raffaello** — its fingerprint was saved and looked up under different device-name keys; both keys now match
+
+### Changes
+- **Vendored libdivecomputer** `9b1cd20` (2026-08-31) → `9e6c3c8` (2026-09-11): `descriptor.c`, `mares_iconhd_parser.c` and `oceanic_atom2_parser.c`, byte-identical to upstream, no local C patches; `version.h` unchanged (0.10.0)
+- **Oceanic DSX salinity is no longer reported** (upstream: the previous decoding was incorrect)
+- `UPSTREAM.md` records the new snapshot, the depth and Cressi additions, and the re-checked `SZ_DECOMPRESS_MAX` decision
+
+### Notes
+- Depths are still in metres, converted by libdivecomputer from each computer's native unit
+- Verified on an Aqualung i300C (78 dives): every stored maximum equals the value in the computer's raw dive record — 0.04–0.82 m deeper than the deepest logged sample on 63 dives, identical on the rest; average depth unchanged (the i300C records none)
+- Verified on a Shearwater Perdix 3 re-download: maximum equals the deepest sample and average the profile average, unchanged apart from 2-decimal rounding in previously stored values
+- No sanity bound is applied to the computer's values: a corrupt all-ones field is not filtered (rare — every supported family reads it as at least 638 m, except older 12-bit Oceanic models at 78 m)
+- Families that report no average depth keep the profile average: Shearwater, Suunto EON Steel family, Scubapro (Uwatec Smart), Deepblu, Halcyon, Oceans S1, DiveSystem, and most Oceanic/Aqualung models
+- For apps using this library: re-downloading existing dives replaces their stored max and average depth with the computer's values
+
 ## v2.0 — 2026-07-10
 
 ### New devices supported

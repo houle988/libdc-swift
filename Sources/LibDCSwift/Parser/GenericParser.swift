@@ -482,6 +482,32 @@ public class GenericParser {
             wrapper.data.tempSurfaceMeasured = tempSurf
         }
 
+        // Prefer the average depth recorded by the computer (DC_FIELD_AVGDEPTH, metres);
+        // fall back to the time-weighted profile average when the family or layout does
+        // not report it, or reports a non-finite or non-positive value.
+        let averageDepth: Double
+        if let reportedAvgDepth: Double = getField(parser, type: DC_FIELD_AVGDEPTH),
+           reportedAvgDepth.isFinite, reportedAvgDepth > 0 {
+            averageDepth = reportedAvgDepth
+        } else {
+            averageDepth = wrapper.calculateAverageDepth()
+        }
+
+        // Prefer the maximum depth recorded by the computer (DC_FIELD_MAXDEPTH, metres): it
+        // captures the true peak, which the logged profile can miss between samples. Fall back
+        // to the deepest profile sample when it is not reported, or is non-finite or non-positive.
+        // Shearwater always uses the profile: non-PNF firmware records the closing-log maximum
+        // in whole metres/feet, coarser than its 0.1 m samples, and the wrapper cannot tell
+        // PNF from non-PNF here.
+        let maximumDepth: Double
+        if family != .shearwaterPetrel,
+           let reportedMaxDepth: Double = getField(parser, type: DC_FIELD_MAXDEPTH),
+           reportedMaxDepth.isFinite, reportedMaxDepth > 0 {
+            maximumDepth = reportedMaxDepth
+        } else {
+            maximumDepth = wrapper.data.maxDepth
+        }
+
         // Create date from components
         var dateComponents = DateComponents()
         dateComponents.year = Int(datetime.year)
@@ -499,11 +525,12 @@ public class GenericParser {
         return DiveData(
             number: diveNumber,
             datetime: date,
-            maxDepth: wrapper.data.maxDepth,
-            avgDepth: wrapper.calculateAverageDepth(),
+            maxDepth: maximumDepth,
+            avgDepth: averageDepth,
             // Intentionally uses maxTime (last DC_SAMPLE_TIME) rather than DC_FIELD_DIVETIME.
             // maxTime is consistent across all device families and matches the profiled underwater
-            // duration used by all derived calculations (SAC, avg depth, surface intervals).
+            // duration used by the derived calculations (SAC, surface intervals, and the profile
+            // average depth when the computer reports none).
             divetime: wrapper.data.maxTime,
             temperature: wrapper.data.tempMinimum,
             profile: wrapper.data.profile,
