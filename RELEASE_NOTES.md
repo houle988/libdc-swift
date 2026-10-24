@@ -15,6 +15,15 @@ libdivecomputer updated to upstream `9e6c3c8` (2026-09-11). Maximum and average 
 - **Oceanic i770R** (upstream) — dive time, minimum temperature and salinity (fresh/salt)
 - **Mares average depth** field (upstream) for the iconHD, Genius and Horizon layouts
 
+### CCR setpoint per sample
+- **`DiveProfilePoint.setpoint` is now the setpoint in effect at each sample** (new `SampleData.currentSetpoint`), instead of the last setpoint seen anywhere earlier in the dive. `DiveData.setpoint`, the dive's last reported setpoint, is unchanged
+- **Per-sample backends** (`GenericParser.reportsSetpointEverySample(_:)`): Shearwater, DiveSystem iDive, McLean Extreme and TecDiving report `DC_SAMPLE_SETPOINT` in every sample while a setpoint is in effect and omit it otherwise (e.g. Shearwater on open circuit), so the setpoint is cleared after each sample: an open-circuit bailout sample has no setpoint
+- **Change-only backends** (OSTC, Suunto EON Steel, Divesoft Freedom, Suunto D9, Deep Six) keep holding the setpoint until the next report. When the backend flags its diluents (OSTC, EON Steel, Divesoft), a `DC_SAMPLE_GASMIX` switch to a non-diluent, non-oxygen mix clears it, a setpoint reported while on open circuit is recorded but not applied, and a switch back to a diluent restores the last reported setpoint
+- Divesoft is treated as change-only: it reports the setpoint only in `POINT_1` records and in setpoint-change events
+- Families with no diluent flags (Suunto D9, Deep Six, Liquivision) cannot signal a bailout, so their setpoint stays held
+- No API change: `DiveProfilePoint.setpoint` and `DiveData.setpoint` keep their types and names
+- Verified: 20 open-circuit dives (Shearwater Teric and Perdix 2, Suunto EON Steel, Aqualung i770R, Scubapro G2) parse byte-identically to the previous revision; 3 Shearwater Petrel 3 CCR dives differ only in the per-sample setpoint (none on open-circuit bailout samples)
+
 ### Bug fixes
 - **Fixed Cressi model identification** — Cressi computers advertise BLE names of the form `<hex model>_<hex>` (e.g. `6_1A2B`); the C bridge resolved every Cressi Goa-family computer to the first descriptor, Cressi Cartesio. The new `resolveCressiBLEName` mirrors libdivecomputer's `dc_match_cressi` exactly (case-insensitive, no leading zeros, ASCII hex only, listed models only)
 - **Fixed repeated full downloads on the Cressi Raffaello** — its fingerprint was saved and looked up under different device-name keys; both keys now match

@@ -111,6 +111,22 @@ public class GenericParser {
         /// True once the first DC_SAMPLE_TIME has fired — defers the flush so each profile
         /// point is stamped with its own time, not the following interval's (Finding 3/4).
         var hasSeenTime = false
+        /// True for backends that report the CCR setpoint in every sample while it is in
+        /// effect, and omit it otherwise (e.g. Shearwater on open-circuit bailout): the setpoint
+        /// is then cleared after each sample. Other backends report it only when it changes,
+        /// so it is held until the next report. See `reportsSetpointEverySample(_:)`.
+        var setpointPerSample = false
+        /// Change-only backends that flag their diluents (OSTC, EON Steel, Divesoft): gas-mix
+        /// indices flagged DC_USAGE_DILUENT and DC_USAGE_OXYGEN. A switch to any other mix —
+        /// including one the backend adds while parsing samples, as OSTC does for a bailout gas —
+        /// is an open-circuit bailout, which clears the held setpoint; a switch back to a diluent
+        /// restores the last reported one (unchanged, so not reported again). Empty when the
+        /// backend flags no diluent (D9, Deep Six, Liquivision): the setpoint is then held.
+        var diluentGasMixes: Set<Int> = []
+        var oxygenGasMixes: Set<Int> = []
+        /// True while breathing an open-circuit mix on such a backend: a setpoint reported then
+        /// (e.g. an automatic low/high switch) is recorded but not applied until back on the loop.
+        var onOpenCircuit = false
 
         /// Builds a DiveProfilePoint from the current accumulator state without modifying it.
         /// - Parameters:
@@ -139,7 +155,7 @@ public class GenericParser {
                 rbt: data.rbt,
                 heartbeat: data.heartbeat,
                 bearing: data.bearing,
-                setpoint: data.setpoint
+                setpoint: data.currentSetpoint
             )
         }
 
@@ -151,6 +167,11 @@ public class GenericParser {
             data.currentPressures = [:]
             data.currentPPO2 = [:]
             data.currentVotedPPO2 = nil
+            // Per-sample backends: a point carries a setpoint only when the computer reported
+            // one in that sample, never a value held from an earlier sample.
+            if setpointPerSample {
+                data.currentSetpoint = nil
+            }
 
             // Update maximum time
             data.maxTime = max(data.maxTime, data.time)
@@ -205,6 +226,26 @@ public class GenericParser {
         }
     }
     
+    /// Whether the family's libdivecomputer backend reports DC_SAMPLE_SETPOINT in every sample
+    /// while a setpoint is in effect (and omits it when none is, e.g. on open-circuit bailout),
+    /// rather than only when the setpoint changes. From the backends: Shearwater
+    /// (shearwater_predator_parser.c, CCR samples only), DiveSystem iDive (CCR/SCR samples) and
+    /// McLean Extreme (CCR samples) report it per sample; OSTC, Suunto EON Steel / D9 and Deep Six
+    /// report it as a setpoint-change event. Divesoft Freedom reports it only in POINT_1 records
+    /// (not POINT_2) and in setpoint-change events, so it is held like a change-only backend and
+    /// cleared on bailout through its diluent flags. Shearwater Predator and TecDiving are not
+    /// reachable through `DeviceConfiguration.DeviceFamily`; they are listed for completeness.
+    static func reportsSetpointEverySample(_ family: dc_family_t) -> Bool {
+        switch family {
+        case DC_FAMILY_SHEARWATER_PREDATOR, DC_FAMILY_SHEARWATER_PETREL,
+             DC_FAMILY_DIVESYSTEM_IDIVE, DC_FAMILY_MCLEAN_EXTREME,
+             DC_FAMILY_TECDIVING_DIVECOMPUTEREU:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Parses raw dive data into a structured DiveData object
     /// - Parameters:
     ///   - family: The family of the dive computer
@@ -246,6 +287,24 @@ public class GenericParser {
         }
         
         let wrapper = SampleDataWrapper()
+        wrapper.setpointPerSample = reportsSetpointEverySample(family.asDCFamily)
+        if !wrapper.setpointPerSample,
+           let gasmixCount: UInt32 = getField(parser, type: DC_FIELD_GASMIX_COUNT) {
+            var diluents: Set<Int> = []
+            var oxygen: Set<Int> = []
+            for i in 0..<gasmixCount {
+                guard let gasmix: dc_gasmix_t = getField(parser, type: DC_FIELD_GASMIX, flags: UInt32(i)) else { continue }
+                switch gasmix.usage {
+                case DC_USAGE_DILUENT: diluents.insert(Int(i))
+                case DC_USAGE_OXYGEN: oxygen.insert(Int(i))  // the loop's oxygen supply
+                default: break
+                }
+            }
+            if !diluents.isEmpty {
+                wrapper.diluentGasMixes = diluents
+                wrapper.oxygenGasMixes = oxygen
+            }
+        }
         
         // Convert wrapper to UnsafeMutableRawPointer
         let wrapperPtr = UnsafeMutableRawPointer(Unmanaged.passRetained(wrapper).toOpaque())
@@ -326,6 +385,9 @@ public class GenericParser {
                 
             case DC_SAMPLE_SETPOINT:
                 wrapper.data.setpoint = value.setpoint
+                if !wrapper.onOpenCircuit {
+                    wrapper.data.currentSetpoint = value.setpoint
+                }
                 
             case DC_SAMPLE_PPO2:
                 if value.ppo2.sensor == DC_SENSOR_NONE {
@@ -367,6 +429,18 @@ public class GenericParser {
             case DC_SAMPLE_GASMIX:
                 let gasMixUnknown = Int(DC_GASMIX_UNKNOWN)
                 let newGasMix = Int(value.gasmix)
+                // Change-only setpoint backends that flag diluents: bailout to an open-circuit
+                // mix clears the held setpoint, back on a diluent restores the last reported one
+                // (see wrapper). The loop's oxygen supply changes neither.
+                if !wrapper.diluentGasMixes.isEmpty, newGasMix != gasMixUnknown {
+                    if wrapper.diluentGasMixes.contains(newGasMix) {
+                        wrapper.onOpenCircuit = false
+                        wrapper.data.currentSetpoint = wrapper.data.setpoint
+                    } else if !wrapper.oxygenGasMixes.contains(newGasMix) {
+                        wrapper.onOpenCircuit = true
+                        wrapper.data.currentSetpoint = nil
+                    }
+                }
                 // Synthesize a gasChange event when the active gas mix changes.
                 // Skip DC_GASMIX_UNKNOWN (0xFFFFFFFF) which Shearwater sends for tanks without AI transmitters.
                 if newGasMix != gasMixUnknown,

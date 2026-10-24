@@ -53,7 +53,15 @@ public struct SampleData {
     var bearing: UInt32?                // Compass bearing
     
     // Rebreather data
-    var setpoint: Double?               // Setpoint value
+    var setpoint: Double?               // Last setpoint reported during the dive (dive-level value)
+    /// Setpoint in effect for the current sample. Per-sample backends
+    /// (`GenericParser.reportsSetpointEverySample`): the value reported in this sample, nil when
+    /// none was (e.g. Shearwater on open-circuit bailout). Change-only backends: held from the
+    /// last setpoint-change report; when the backend flags its diluents (OSTC, EON Steel,
+    /// Divesoft), a switch to an open-circuit gas clears it, a setpoint reported while on open
+    /// circuit is recorded in `setpoint` but not applied, and a switch back to a diluent restores
+    /// `setpoint`.
+    var currentSetpoint: Double?
     var ppo2: [(sensor: UInt32, value: Double)] = []  // PPO2 readings (cumulative across dive)
     var currentPPO2: [Int: Double] = [:]              // Per-sensor PPO2 for the current sample {sensorIndex: bar}
     var currentVotedPPO2: Double?                      // Voted PPO2 (sensor 0xFFFFFFFF) for current sample
