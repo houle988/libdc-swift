@@ -201,10 +201,23 @@ public class GenericParser {
         }
 
         /// Calculates time-weighted average depth from profile data
+        /// - Parameter endTime: The dive's end recorded by the computer (DC_FIELD_DIVETIME,
+        ///   seconds), passed only for Shearwater PNF logs and applied on the profile's clock.
+        ///   When it falls inside the profile, the average stops there, so the surface samples
+        ///   the computer keeps logging after the dive do not lower it; the depth at that moment
+        ///   is interpolated between its two samples. Without it, or when it is not inside the
+        ///   profile, the whole profile is averaged.
         /// - Returns: Average depth in meters, or 0 if profile is empty
-        func calculateAverageDepth() -> Double {
+        func calculateAverageDepth(until endTime: TimeInterval? = nil) -> Double {
             guard data.profile.count >= 2 else {
                 return data.profile.first?.depth ?? 0
+            }
+
+            let cutoff: TimeInterval? = endTime.flatMap { end in
+                guard end.isFinite,
+                      let first = data.profile.first?.time, let last = data.profile.last?.time,
+                      end > first, end < last else { return nil }
+                return end
             }
 
             var weightedSum: Double = 0
@@ -214,9 +227,22 @@ public class GenericParser {
             for i in 0..<(data.profile.count - 1) {
                 let currentPoint = data.profile[i]
                 let nextPoint = data.profile[i + 1]
+                var nextTime = nextPoint.time
+                var nextDepth = nextPoint.depth
 
-                let timeInterval = nextPoint.time - currentPoint.time
-                let avgDepthSegment = (currentPoint.depth + nextPoint.depth) / 2.0
+                if let cutoff {
+                    if currentPoint.time >= cutoff { break }
+                    if nextTime > cutoff {
+                        // Clip the last segment at the computer's end.
+                        let span = nextTime - currentPoint.time
+                        let fraction = span > 0 ? (cutoff - currentPoint.time) / span : 0
+                        nextDepth = currentPoint.depth + (nextPoint.depth - currentPoint.depth) * fraction
+                        nextTime = cutoff
+                    }
+                }
+
+                let timeInterval = nextTime - currentPoint.time
+                let avgDepthSegment = (currentPoint.depth + nextDepth) / 2.0
 
                 weightedSum += avgDepthSegment * timeInterval
                 totalTime += timeInterval
@@ -226,6 +252,14 @@ public class GenericParser {
         }
     }
     
+    /// Whether a Shearwater Petrel-family dive is in Petrel Native Format (PNF), using the same
+    /// test as libdivecomputer's parser (shearwater_predator_parser.c: a legacy log starts with
+    /// the 0xFFFF opening-block marker; a PNF log does not).
+    static func isShearwaterPNF(_ data: UnsafePointer<UInt8>, size: Int) -> Bool {
+        guard size >= 2 else { return false }
+        return !(data[0] == 0xFF && data[1] == 0xFF)
+    }
+
     /// Whether the family's libdivecomputer backend reports DC_SAMPLE_SETPOINT in every sample
     /// while a setpoint is in effect (and omits it when none is, e.g. on open-circuit bailout),
     /// rather than only when the setpoint changes. From the backends: Shearwater
@@ -556,25 +590,47 @@ public class GenericParser {
             wrapper.data.tempSurfaceMeasured = tempSurf
         }
 
+        // The dive time recorded by the computer (DC_FIELD_DIVETIME, seconds), kept beside the
+        // last-sample `divetime`. Zero means not recorded; above 48 hours is rejected because
+        // the Mares Icon HD fallback (samples × interval − surface timeout) is unsigned and
+        // wraps to about 4 billion seconds for a dive shorter than the surface timeout.
+        let reportedDivetime: TimeInterval?
+        if let divetimeSeconds: UInt32 = getField(parser, type: DC_FIELD_DIVETIME),
+           divetimeSeconds > 0, divetimeSeconds <= 48 * 3600 {
+            reportedDivetime = TimeInterval(divetimeSeconds)
+        } else {
+            reportedDivetime = nil
+        }
+
+        let isShearwaterPNFLog = family == .shearwaterPetrel && isShearwaterPNF(diveData, size: dataSize)
+
         // Prefer the average depth recorded by the computer (DC_FIELD_AVGDEPTH, metres);
         // fall back to the time-weighted profile average when the family or layout does
-        // not report it, or reports a non-finite or non-positive value.
+        // not report it, or reports a non-finite or non-positive value. For Shearwater PNF
+        // logs (no recorded average) the fallback stops at the computer's dive time, measured
+        // on the profile's clock: it is in seconds, and the computer keeps logging at the
+        // surface after it. Its dive time does not start exactly with the profile (observed on
+        // a Peregrine: about 8 s later, when passing about 1.5 m on the way down), so the cut is
+        // accurate to within one sample interval; the few shallow seconds included at the start
+        // and left out at the end nearly cancel. Other families average the whole profile:
+        // their dive time may be in whole minutes or start elsewhere (not verified), so
+        // stopping there could drop part of the dive.
         let averageDepth: Double
         if let reportedAvgDepth: Double = getField(parser, type: DC_FIELD_AVGDEPTH),
            reportedAvgDepth.isFinite, reportedAvgDepth > 0 {
             averageDepth = reportedAvgDepth
         } else {
-            averageDepth = wrapper.calculateAverageDepth()
+            averageDepth = wrapper.calculateAverageDepth(until: isShearwaterPNFLog ? reportedDivetime : nil)
         }
 
         // Prefer the maximum depth recorded by the computer (DC_FIELD_MAXDEPTH, metres): it
         // captures the true peak, which the logged profile can miss between samples. Fall back
         // to the deepest profile sample when it is not reported, or is non-finite or non-positive.
-        // Shearwater always uses the profile: non-PNF firmware records the closing-log maximum
-        // in whole metres/feet, coarser than its 0.1 m samples, and the wrapper cannot tell
-        // PNF from non-PNF here.
+        // Shearwater uses it only for Petrel Native Format (PNF) logs, which record the closing
+        // maximum in 0.1 m/ft like the samples; legacy (non-PNF) logs record it in whole metres
+        // or feet, coarser than the samples, so they keep the profile maximum.
         let maximumDepth: Double
-        if family != .shearwaterPetrel,
+        if family != .shearwaterPetrel || isShearwaterPNFLog,
            let reportedMaxDepth: Double = getField(parser, type: DC_FIELD_MAXDEPTH),
            reportedMaxDepth.isFinite, reportedMaxDepth > 0 {
             maximumDepth = reportedMaxDepth
@@ -602,10 +658,12 @@ public class GenericParser {
             maxDepth: maximumDepth,
             avgDepth: averageDepth,
             // Intentionally uses maxTime (last DC_SAMPLE_TIME) rather than DC_FIELD_DIVETIME.
-            // maxTime is consistent across all device families and matches the profiled underwater
-            // duration used by the derived calculations (SAC, surface intervals, and the profile
-            // average depth when the computer reports none).
+            // maxTime is consistent across all device families and is the profile's length
+            // (the whole-profile average depth when the computer reports none, except Shearwater
+            // PNF logs, whose average stops at `reportedDivetime`). The computer's own dive time
+            // is `reportedDivetime`.
             divetime: wrapper.data.maxTime,
+            reportedDivetime: reportedDivetime,
             temperature: wrapper.data.tempMinimum,
             profile: wrapper.data.profile,
             tankPressure: wrapper.data.pressure.map { $0.value },
