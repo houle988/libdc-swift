@@ -33,7 +33,7 @@ public struct SampleData {
     var gasMixes: [GasMix] = []         // All gas mixes used
     
     // Environmental data
-    var atmospheric: Double = 1.0       // Atmospheric pressure
+    var atmospheric: Double?           // Surface (atmospheric) pressure in bar; nil when not reported
     var salinity: Double?              // Water salinity
     
     // Tank information

@@ -32,6 +32,12 @@ libdivecomputer updated to upstream `9e6c3c8` (2026-09-11). Maximum and average 
 - No API change: `DiveProfilePoint.setpoint` and `DiveData.setpoint` keep their types and names
 - Verified: 20 open-circuit dives (Shearwater Teric and Perdix 2, Suunto EON Steel, Aqualung i770R, Scubapro G2) parse byte-identically to the previous revision; 3 Shearwater Petrel 3 CCR dives differ only in the per-sample setpoint (none on open-circuit bailout samples)
 
+### Computer-reported surface pressure
+- **`DiveData.atmospheric` is now `nil` when the computer reports no surface pressure**, instead of 1.0 bar: the internal `SampleData.atmospheric` started at 1.0 and was passed on whenever `DC_FIELD_ATMOSPHERIC` was unsupported, so "not reported" could not be told apart from a measurement
+- A reported value is kept only when finite and within `GenericParser.validAtmosphericRange` (0.4–1.2 bar, new public constant): Divesoft returns 0 when its header holds none, and a zeroed Shearwater opening block reads as 0
+- 15 families report it, all in bar: Atomics Cobalt, Cochran (derived from the altitude it stores, in 250 ft steps), Cressi Goa family, Deepblu, Deep Six, DiveSystem iDive, Divesoft, Halcyon Symbios, Heinrichs Weikamp OSTC, Liquivision, Mares iconHD, McLean Extreme, Shearwater, Suunto EON Steel, TecDiving
+- No API break: `DiveData.atmospheric` was already `Double?`; only its value changes for computers that do not report it (nil instead of 1.0)
+
 ### Bug fixes
 - **Fixed Cressi model identification** — Cressi computers advertise BLE names of the form `<hex model>_<hex>` (e.g. `6_1A2B`); the C bridge resolved every Cressi Goa-family computer to the first descriptor, Cressi Cartesio. The new `resolveCressiBLEName` mirrors libdivecomputer's `dc_match_cressi` exactly (case-insensitive, no leading zeros, ASCII hex only, listed models only)
 - **Fixed repeated full downloads on the Cressi Raffaello** — its fingerprint was saved and looked up under different device-name keys; both keys now match

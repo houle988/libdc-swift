@@ -251,6 +251,9 @@ public struct DiveData: Identifiable {
     
     // Environmental data
     public var salinity: Double?
+    /// Surface (atmospheric) pressure recorded by the computer, in bar (DC_FIELD_ATMOSPHERIC);
+    /// nil when the family or layout does not report it, or reports a value outside
+    /// `GenericParser.validAtmosphericRange` (a placeholder such as 0).
     public var atmospheric: Double?
     /// Surface temperature: the computer's own value (DC_FIELD_TEMPERATURE_SURFACE) when it
     /// reports one, otherwise the first profile sample's temperature — usually water, not air.

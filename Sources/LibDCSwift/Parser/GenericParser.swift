@@ -88,6 +88,11 @@ public class GenericParser {
         case sampleProcessingFailed(dc_status_t) /// Failed at processing dive samples
     }
     
+    /// Surface pressures accepted from DC_FIELD_ATMOSPHERIC, in bar: about 6 000 m of altitude
+    /// (0.47 bar at 6 390 m) up to the strongest sea-level highs (about 1.084 bar). A value
+    /// outside it is a placeholder (e.g. 0), not a measurement.
+    public static let validAtmosphericRange: ClosedRange<Double> = 0.4...1.2
+
     /// Retrieves a specific field from the dive data parser
     /// - Parameters:
     ///   - parser: The libdivecomputer parser instance
@@ -572,7 +577,13 @@ public class GenericParser {
                                                          : (salinity.type == DC_WATER_SALT ? 1.025 : 1.000)
         }
 
-        if let atmospheric: Double = getField(parser, type: DC_FIELD_ATMOSPHERIC) {
+        // The surface (atmospheric) pressure recorded by the computer (DC_FIELD_ATMOSPHERIC,
+        // bar). Kept only when finite and within `validAtmosphericRange`: Divesoft returns 0 when
+        // its header holds none, and a zeroed Shearwater opening block reads as 0 too. Cochran
+        // derives it from the altitude it stores (in 250 ft steps), which is still the
+        // computer's own value. Nil when the family or layout does not report it.
+        if let atmospheric: Double = getField(parser, type: DC_FIELD_ATMOSPHERIC),
+           atmospheric.isFinite, GenericParser.validAtmosphericRange.contains(atmospheric) {
             wrapper.data.atmospheric = atmospheric
         }
 
