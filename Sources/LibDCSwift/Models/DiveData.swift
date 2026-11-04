@@ -230,6 +230,14 @@ public struct DiveData: Identifiable {
     public var maxDepth: Double
     public var avgDepth: Double
     public var divetime: TimeInterval
+    /// Dive time in seconds as recorded by the computer (DC_FIELD_DIVETIME), or nil when the
+    /// family or layout does not report it, or reports zero or more than 48 hours. Unlike
+    /// `divetime` (the last profile sample), it ends where the computer ended the dive, so it
+    /// excludes the surface time many computers keep logging. Precision depends on the family:
+    /// seconds for most, whole minutes × 60 for Shearwater non-PNF, Uwatec Smart, Deepblu and
+    /// Oceanic i770R, and worked out by libdivecomputer for Mares Icon HD layouts without the
+    /// field (samples minus the surface timeout), Halcyon and Suunto EON Steel.
+    public var reportedDivetime: TimeInterval?
     public var temperature: Double
     
     // Profile data
@@ -243,6 +251,9 @@ public struct DiveData: Identifiable {
     
     // Environmental data
     public var salinity: Double?
+    /// Surface (atmospheric) pressure recorded by the computer, in bar (DC_FIELD_ATMOSPHERIC);
+    /// nil when the family or layout does not report it, or reports a value outside
+    /// `GenericParser.validAtmosphericRange` (a placeholder such as 0).
     public var atmospheric: Double?
     /// Surface temperature: the computer's own value (DC_FIELD_TEMPERATURE_SURFACE) when it
     /// reports one, otherwise the first profile sample's temperature — usually water, not air.
@@ -411,6 +422,7 @@ public struct DiveData: Identifiable {
         maxDepth: Double,
         avgDepth: Double,
         divetime: TimeInterval,
+        reportedDivetime: TimeInterval? = nil,
         temperature: Double,
         profile: [DiveProfilePoint],
         tankPressure: [Double],
@@ -443,6 +455,7 @@ public struct DiveData: Identifiable {
         self.maxDepth = maxDepth
         self.avgDepth = avgDepth
         self.divetime = divetime
+        self.reportedDivetime = reportedDivetime
         self.temperature = temperature
         self.profile = profile
         self.tankPressure = tankPressure

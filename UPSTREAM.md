@@ -74,7 +74,7 @@ Upstream removed auto-reconnect in `2b6da5d`. **Do not remove it** — it is an 
 Upstream added iOS CoreBluetooth state restoration so the OS can relaunch the host app in the background to deliver `willRestoreState`. **Do not take this change** until the host app declares `bluetooth-central` in its `UIBackgroundModes` (Info.plist). Without that entitlement the restore identifier is a no-op — `willRestoreState` is never called and the option adds overhead for zero benefit. If `bluetooth-central` is ever added, a full integration audit is required: a restored peripheral lands in `bleManager.peripheral` with `openedDeviceDataPtr == nil` and `connectedDevice == nil`; the host app's connection flow must be verified to handle or ignore this pre-populated state without a stuck session or leak.
 
 ### `libdivecomputer/src/shearwater_common.c` — `SZ_DECOMPRESS_MAX`
-Upstream (`7033030`) added a 20 MB sanity ceiling on LRE decompression buffer growth to our vendored C library copy. This fix is **not present in the real libdivecomputer upstream** — it is a local patch applied only to the `libdc-swift` vendored copy. We skip it to avoid drift from the real libdivecomputer source; revisit at the next `libdivecomputer` sync.
+Upstream (`7033030`) added a 20 MB sanity ceiling on LRE decompression buffer growth to our vendored C library copy. This fix is **not present in the real libdivecomputer upstream** — it is a local patch applied only to the `libdc-swift` vendored copy. We skip it to avoid drift from the real libdivecomputer source; revisit at the next `libdivecomputer` sync. Re-checked at the `9e6c3c8` sync (2026-09-11): real upstream still has no ceiling, so it stays skipped.
 
 ## How to review upstream for new changes
 
@@ -90,8 +90,8 @@ Upstream (`7033030`) added a 20 MB sanity ceiling on LRE decompression buffer gr
 | Area | Feature |
 |---|---|
 | `DiveLogRetriever.swift` | Clock synchronisation (`syncClock`) |
-| `GenericParser.swift` / `SampleData.swift` | GPS coordinates, tank pressures, gas-change synthesis, salinity precision; `Double.infinity` temperature sentinel (ice-diving 0°C fix) |
-| `DeviceConfiguration.swift` | Shearwater Perdix 3, Seac, Halcyon, Oceanic BLE name resolution |
+| `GenericParser.swift` / `SampleData.swift` | GPS coordinates, tank pressures, gas-change synthesis, salinity precision; `Double.infinity` temperature sentinel (ice-diving 0°C fix); computer-reported average depth (`DC_FIELD_AVGDEPTH`) preferred over the profile average; computer-reported maximum depth (`DC_FIELD_MAXDEPTH`) preferred over the deepest profile sample, except Shearwater (non-PNF firmware records whole metres/feet) |
+| `DeviceConfiguration.swift` | Shearwater Perdix 3, Seac, Halcyon, Oceanic BLE name resolution; Cressi BLE name resolution (`resolveCressiBLEName`, mirrors `dc_match_cressi`) |
 | `BLEManager.swift` | Auto-reconnect on unexpected disconnect |
 | `BLEManager.swift` | `DispatchSourceTimer` for retrieval timeout (vs broken `Timer`) |
 | `BLEBridge.m` | `DC_IOCTL_BLE_GET_NAME` for Oceanic/Aqualung handshake |

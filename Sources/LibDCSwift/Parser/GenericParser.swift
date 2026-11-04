@@ -88,6 +88,11 @@ public class GenericParser {
         case sampleProcessingFailed(dc_status_t) /// Failed at processing dive samples
     }
     
+    /// Surface pressures accepted from DC_FIELD_ATMOSPHERIC, in bar: about 6 000 m of altitude
+    /// (0.47 bar at 6 390 m) up to the strongest sea-level highs (about 1.084 bar). A value
+    /// outside it is a placeholder (e.g. 0), not a measurement.
+    public static let validAtmosphericRange: ClosedRange<Double> = 0.4...1.2
+
     /// Retrieves a specific field from the dive data parser
     /// - Parameters:
     ///   - parser: The libdivecomputer parser instance
@@ -111,6 +116,22 @@ public class GenericParser {
         /// True once the first DC_SAMPLE_TIME has fired — defers the flush so each profile
         /// point is stamped with its own time, not the following interval's (Finding 3/4).
         var hasSeenTime = false
+        /// True for backends that report the CCR setpoint in every sample while it is in
+        /// effect, and omit it otherwise (e.g. Shearwater on open-circuit bailout): the setpoint
+        /// is then cleared after each sample. Other backends report it only when it changes,
+        /// so it is held until the next report. See `reportsSetpointEverySample(_:)`.
+        var setpointPerSample = false
+        /// Change-only backends that flag their diluents (OSTC, EON Steel, Divesoft): gas-mix
+        /// indices flagged DC_USAGE_DILUENT and DC_USAGE_OXYGEN. A switch to any other mix —
+        /// including one the backend adds while parsing samples, as OSTC does for a bailout gas —
+        /// is an open-circuit bailout, which clears the held setpoint; a switch back to a diluent
+        /// restores the last reported one (unchanged, so not reported again). Empty when the
+        /// backend flags no diluent (D9, Deep Six, Liquivision): the setpoint is then held.
+        var diluentGasMixes: Set<Int> = []
+        var oxygenGasMixes: Set<Int> = []
+        /// True while breathing an open-circuit mix on such a backend: a setpoint reported then
+        /// (e.g. an automatic low/high switch) is recorded but not applied until back on the loop.
+        var onOpenCircuit = false
 
         /// Builds a DiveProfilePoint from the current accumulator state without modifying it.
         /// - Parameters:
@@ -139,7 +160,7 @@ public class GenericParser {
                 rbt: data.rbt,
                 heartbeat: data.heartbeat,
                 bearing: data.bearing,
-                setpoint: data.setpoint
+                setpoint: data.currentSetpoint
             )
         }
 
@@ -151,6 +172,11 @@ public class GenericParser {
             data.currentPressures = [:]
             data.currentPPO2 = [:]
             data.currentVotedPPO2 = nil
+            // Per-sample backends: a point carries a setpoint only when the computer reported
+            // one in that sample, never a value held from an earlier sample.
+            if setpointPerSample {
+                data.currentSetpoint = nil
+            }
 
             // Update maximum time
             data.maxTime = max(data.maxTime, data.time)
@@ -180,10 +206,23 @@ public class GenericParser {
         }
 
         /// Calculates time-weighted average depth from profile data
+        /// - Parameter endTime: The dive's end recorded by the computer (DC_FIELD_DIVETIME,
+        ///   seconds), passed only for Shearwater PNF logs and applied on the profile's clock.
+        ///   When it falls inside the profile, the average stops there, so the surface samples
+        ///   the computer keeps logging after the dive do not lower it; the depth at that moment
+        ///   is interpolated between its two samples. Without it, or when it is not inside the
+        ///   profile, the whole profile is averaged.
         /// - Returns: Average depth in meters, or 0 if profile is empty
-        func calculateAverageDepth() -> Double {
+        func calculateAverageDepth(until endTime: TimeInterval? = nil) -> Double {
             guard data.profile.count >= 2 else {
                 return data.profile.first?.depth ?? 0
+            }
+
+            let cutoff: TimeInterval? = endTime.flatMap { end in
+                guard end.isFinite,
+                      let first = data.profile.first?.time, let last = data.profile.last?.time,
+                      end > first, end < last else { return nil }
+                return end
             }
 
             var weightedSum: Double = 0
@@ -193,9 +232,22 @@ public class GenericParser {
             for i in 0..<(data.profile.count - 1) {
                 let currentPoint = data.profile[i]
                 let nextPoint = data.profile[i + 1]
+                var nextTime = nextPoint.time
+                var nextDepth = nextPoint.depth
 
-                let timeInterval = nextPoint.time - currentPoint.time
-                let avgDepthSegment = (currentPoint.depth + nextPoint.depth) / 2.0
+                if let cutoff {
+                    if currentPoint.time >= cutoff { break }
+                    if nextTime > cutoff {
+                        // Clip the last segment at the computer's end.
+                        let span = nextTime - currentPoint.time
+                        let fraction = span > 0 ? (cutoff - currentPoint.time) / span : 0
+                        nextDepth = currentPoint.depth + (nextPoint.depth - currentPoint.depth) * fraction
+                        nextTime = cutoff
+                    }
+                }
+
+                let timeInterval = nextTime - currentPoint.time
+                let avgDepthSegment = (currentPoint.depth + nextDepth) / 2.0
 
                 weightedSum += avgDepthSegment * timeInterval
                 totalTime += timeInterval
@@ -205,6 +257,34 @@ public class GenericParser {
         }
     }
     
+    /// Whether a Shearwater Petrel-family dive is in Petrel Native Format (PNF), using the same
+    /// test as libdivecomputer's parser (shearwater_predator_parser.c: a legacy log starts with
+    /// the 0xFFFF opening-block marker; a PNF log does not).
+    static func isShearwaterPNF(_ data: UnsafePointer<UInt8>, size: Int) -> Bool {
+        guard size >= 2 else { return false }
+        return !(data[0] == 0xFF && data[1] == 0xFF)
+    }
+
+    /// Whether the family's libdivecomputer backend reports DC_SAMPLE_SETPOINT in every sample
+    /// while a setpoint is in effect (and omits it when none is, e.g. on open-circuit bailout),
+    /// rather than only when the setpoint changes. From the backends: Shearwater
+    /// (shearwater_predator_parser.c, CCR samples only), DiveSystem iDive (CCR/SCR samples) and
+    /// McLean Extreme (CCR samples) report it per sample; OSTC, Suunto EON Steel / D9 and Deep Six
+    /// report it as a setpoint-change event. Divesoft Freedom reports it only in POINT_1 records
+    /// (not POINT_2) and in setpoint-change events, so it is held like a change-only backend and
+    /// cleared on bailout through its diluent flags. Shearwater Predator and TecDiving are not
+    /// reachable through `DeviceConfiguration.DeviceFamily`; they are listed for completeness.
+    static func reportsSetpointEverySample(_ family: dc_family_t) -> Bool {
+        switch family {
+        case DC_FAMILY_SHEARWATER_PREDATOR, DC_FAMILY_SHEARWATER_PETREL,
+             DC_FAMILY_DIVESYSTEM_IDIVE, DC_FAMILY_MCLEAN_EXTREME,
+             DC_FAMILY_TECDIVING_DIVECOMPUTEREU:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Parses raw dive data into a structured DiveData object
     /// - Parameters:
     ///   - family: The family of the dive computer
@@ -246,6 +326,24 @@ public class GenericParser {
         }
         
         let wrapper = SampleDataWrapper()
+        wrapper.setpointPerSample = reportsSetpointEverySample(family.asDCFamily)
+        if !wrapper.setpointPerSample,
+           let gasmixCount: UInt32 = getField(parser, type: DC_FIELD_GASMIX_COUNT) {
+            var diluents: Set<Int> = []
+            var oxygen: Set<Int> = []
+            for i in 0..<gasmixCount {
+                guard let gasmix: dc_gasmix_t = getField(parser, type: DC_FIELD_GASMIX, flags: UInt32(i)) else { continue }
+                switch gasmix.usage {
+                case DC_USAGE_DILUENT: diluents.insert(Int(i))
+                case DC_USAGE_OXYGEN: oxygen.insert(Int(i))  // the loop's oxygen supply
+                default: break
+                }
+            }
+            if !diluents.isEmpty {
+                wrapper.diluentGasMixes = diluents
+                wrapper.oxygenGasMixes = oxygen
+            }
+        }
         
         // Convert wrapper to UnsafeMutableRawPointer
         let wrapperPtr = UnsafeMutableRawPointer(Unmanaged.passRetained(wrapper).toOpaque())
@@ -326,6 +424,9 @@ public class GenericParser {
                 
             case DC_SAMPLE_SETPOINT:
                 wrapper.data.setpoint = value.setpoint
+                if !wrapper.onOpenCircuit {
+                    wrapper.data.currentSetpoint = value.setpoint
+                }
                 
             case DC_SAMPLE_PPO2:
                 if value.ppo2.sensor == DC_SENSOR_NONE {
@@ -367,6 +468,18 @@ public class GenericParser {
             case DC_SAMPLE_GASMIX:
                 let gasMixUnknown = Int(DC_GASMIX_UNKNOWN)
                 let newGasMix = Int(value.gasmix)
+                // Change-only setpoint backends that flag diluents: bailout to an open-circuit
+                // mix clears the held setpoint, back on a diluent restores the last reported one
+                // (see wrapper). The loop's oxygen supply changes neither.
+                if !wrapper.diluentGasMixes.isEmpty, newGasMix != gasMixUnknown {
+                    if wrapper.diluentGasMixes.contains(newGasMix) {
+                        wrapper.onOpenCircuit = false
+                        wrapper.data.currentSetpoint = wrapper.data.setpoint
+                    } else if !wrapper.oxygenGasMixes.contains(newGasMix) {
+                        wrapper.onOpenCircuit = true
+                        wrapper.data.currentSetpoint = nil
+                    }
+                }
                 // Synthesize a gasChange event when the active gas mix changes.
                 // Skip DC_GASMIX_UNKNOWN (0xFFFFFFFF) which Shearwater sends for tanks without AI transmitters.
                 if newGasMix != gasMixUnknown,
@@ -464,7 +577,13 @@ public class GenericParser {
                                                          : (salinity.type == DC_WATER_SALT ? 1.025 : 1.000)
         }
 
-        if let atmospheric: Double = getField(parser, type: DC_FIELD_ATMOSPHERIC) {
+        // The surface (atmospheric) pressure recorded by the computer (DC_FIELD_ATMOSPHERIC,
+        // bar). Kept only when finite and within `validAtmosphericRange`: Divesoft returns 0 when
+        // its header holds none, and a zeroed Shearwater opening block reads as 0 too. Cochran
+        // derives it from the altitude it stores (in 250 ft steps), which is still the
+        // computer's own value. Nil when the family or layout does not report it.
+        if let atmospheric: Double = getField(parser, type: DC_FIELD_ATMOSPHERIC),
+           atmospheric.isFinite, GenericParser.validAtmosphericRange.contains(atmospheric) {
             wrapper.data.atmospheric = atmospheric
         }
 
@@ -480,6 +599,54 @@ public class GenericParser {
         if let tempSurf: Double = getField(parser, type: DC_FIELD_TEMPERATURE_SURFACE) {
             wrapper.data.tempSurface = tempSurf
             wrapper.data.tempSurfaceMeasured = tempSurf
+        }
+
+        // The dive time recorded by the computer (DC_FIELD_DIVETIME, seconds), kept beside the
+        // last-sample `divetime`. Zero means not recorded; above 48 hours is rejected because
+        // the Mares Icon HD fallback (samples × interval − surface timeout) is unsigned and
+        // wraps to about 4 billion seconds for a dive shorter than the surface timeout.
+        let reportedDivetime: TimeInterval?
+        if let divetimeSeconds: UInt32 = getField(parser, type: DC_FIELD_DIVETIME),
+           divetimeSeconds > 0, divetimeSeconds <= 48 * 3600 {
+            reportedDivetime = TimeInterval(divetimeSeconds)
+        } else {
+            reportedDivetime = nil
+        }
+
+        let isShearwaterPNFLog = family == .shearwaterPetrel && isShearwaterPNF(diveData, size: dataSize)
+
+        // Prefer the average depth recorded by the computer (DC_FIELD_AVGDEPTH, metres);
+        // fall back to the time-weighted profile average when the family or layout does
+        // not report it, or reports a non-finite or non-positive value. For Shearwater PNF
+        // logs (no recorded average) the fallback stops at the computer's dive time, measured
+        // on the profile's clock: it is in seconds, and the computer keeps logging at the
+        // surface after it. Its dive time does not start exactly with the profile (observed on
+        // a Peregrine: about 8 s later, when passing about 1.5 m on the way down), so the cut is
+        // accurate to within one sample interval; the few shallow seconds included at the start
+        // and left out at the end nearly cancel. Other families average the whole profile:
+        // their dive time may be in whole minutes or start elsewhere (not verified), so
+        // stopping there could drop part of the dive.
+        let averageDepth: Double
+        if let reportedAvgDepth: Double = getField(parser, type: DC_FIELD_AVGDEPTH),
+           reportedAvgDepth.isFinite, reportedAvgDepth > 0 {
+            averageDepth = reportedAvgDepth
+        } else {
+            averageDepth = wrapper.calculateAverageDepth(until: isShearwaterPNFLog ? reportedDivetime : nil)
+        }
+
+        // Prefer the maximum depth recorded by the computer (DC_FIELD_MAXDEPTH, metres): it
+        // captures the true peak, which the logged profile can miss between samples. Fall back
+        // to the deepest profile sample when it is not reported, or is non-finite or non-positive.
+        // Shearwater uses it only for Petrel Native Format (PNF) logs, which record the closing
+        // maximum in 0.1 m/ft like the samples; legacy (non-PNF) logs record it in whole metres
+        // or feet, coarser than the samples, so they keep the profile maximum.
+        let maximumDepth: Double
+        if family != .shearwaterPetrel || isShearwaterPNFLog,
+           let reportedMaxDepth: Double = getField(parser, type: DC_FIELD_MAXDEPTH),
+           reportedMaxDepth.isFinite, reportedMaxDepth > 0 {
+            maximumDepth = reportedMaxDepth
+        } else {
+            maximumDepth = wrapper.data.maxDepth
         }
 
         // Create date from components
@@ -499,12 +666,15 @@ public class GenericParser {
         return DiveData(
             number: diveNumber,
             datetime: date,
-            maxDepth: wrapper.data.maxDepth,
-            avgDepth: wrapper.calculateAverageDepth(),
+            maxDepth: maximumDepth,
+            avgDepth: averageDepth,
             // Intentionally uses maxTime (last DC_SAMPLE_TIME) rather than DC_FIELD_DIVETIME.
-            // maxTime is consistent across all device families and matches the profiled underwater
-            // duration used by all derived calculations (SAC, avg depth, surface intervals).
+            // maxTime is consistent across all device families and is the profile's length
+            // (the whole-profile average depth when the computer reports none, except Shearwater
+            // PNF logs, whose average stops at `reportedDivetime`). The computer's own dive time
+            // is `reportedDivetime`.
             divetime: wrapper.data.maxTime,
+            reportedDivetime: reportedDivetime,
             temperature: wrapper.data.tempMinimum,
             profile: wrapper.data.profile,
             tankPressure: wrapper.data.pressure.map { $0.value },

@@ -212,7 +212,7 @@ public class DiveDataViewModel: ObservableObject {
                 gasMixCount: nil,
                 gasMixes: nil,
                 salinity: nil,
-                atmospheric: 1.0,
+                atmospheric: nil,
                 surfaceTemperature: nil,
                 minTemperature: nil,
                 maxTemperature: nil,
